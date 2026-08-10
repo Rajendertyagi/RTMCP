@@ -22,9 +22,15 @@ const ConfigSchema = z.object({
    * Which market data provider to use.
    * - `"nse"` — scrapes public NSE India endpoints (free, no credentials).
    * - `"zerodha"` — uses the Kite Connect REST API (needs API key + token).
+   * - `"upstox"` — uses the Upstox v2 REST API (free for customers; needs
+   *   API key + secret + a one-time access token). Broker-backed market data
+   *   with NSE scraping as automatic fallback for the reports brokers don't
+   *   expose (FII/DII, IPO, corporate actions, block deals, VIX, …).
+   * - `"angel"` — uses the Angel One SmartAPI (free for customers). Config is
+   *   scaffolded; the provider implementation is added as the next step.
    */
   DATA_PROVIDER: z
-    .enum(['nse', 'zerodha'])
+    .enum(['nse', 'zerodha', 'upstox', 'angel'])
     .default('nse')
     .describe('Market data provider'),
 
@@ -53,6 +59,59 @@ const ConfigSchema = z.object({
     .string()
     .optional()
     .describe('Zerodha Kite access token'),
+
+  /**
+   * Upstox v2 API key (App API key) — required when `DATA_PROVIDER` is
+   * `"upstox"`. Create an app at https://developer.upstox.com/.
+   */
+  UPSTOX_API_KEY: z
+    .string()
+    .optional()
+    .describe('Upstox API key'),
+
+  /**
+   * Upstox v2 API secret — required when `DATA_PROVIDER` is `"upstox"`.
+   */
+  UPSTOX_API_SECRET: z
+    .string()
+    .optional()
+    .describe('Upstox API secret'),
+
+  /**
+   * Upstox v2 access token — required when `DATA_PROVIDER` is `"upstox"`.
+   * Minted once via the OAuth login flow and stored in `.upstox-token.json`
+   * (git-ignored). If absent, set it here or place it in that file.
+   * Upstox tokens are valid for ~24 h and must be re-minted daily.
+   */
+  UPSTOX_ACCESS_TOKEN: z
+    .string()
+    .optional()
+    .describe('Upstox access token'),
+
+  /**
+   * Angel One SmartAPI API key — scaffolded for the planned Angel provider.
+   */
+  ANGEL_API_KEY: z
+    .string()
+    .optional()
+    .describe('Angel One SmartAPI key'),
+
+  /**
+   * Angel One client ID (the login user ID) — scaffolded for the planned
+   * Angel provider.
+   */
+  ANGEL_CLIENT_ID: z
+    .string()
+    .optional()
+    .describe('Angel One client ID'),
+
+  /**
+   * Angel One client PIN — scaffolded for the planned Angel provider.
+   */
+  ANGEL_CLIENT_PIN: z
+    .string()
+    .optional()
+    .describe('Angel One client PIN'),
 
   /**
    * How long (in seconds) to cache real-time market data (quotes, option
@@ -137,6 +196,12 @@ export function loadConfig(): AppConfig {
     KITE_API_KEY: process.env['KITE_API_KEY'],
     KITE_API_SECRET: process.env['KITE_API_SECRET'],
     KITE_ACCESS_TOKEN: process.env['KITE_ACCESS_TOKEN'],
+    UPSTOX_API_KEY: process.env['UPSTOX_API_KEY'],
+    UPSTOX_API_SECRET: process.env['UPSTOX_API_SECRET'],
+    UPSTOX_ACCESS_TOKEN: process.env['UPSTOX_ACCESS_TOKEN'],
+    ANGEL_API_KEY: process.env['ANGEL_API_KEY'],
+    ANGEL_CLIENT_ID: process.env['ANGEL_CLIENT_ID'],
+    ANGEL_CLIENT_PIN: process.env['ANGEL_CLIENT_PIN'],
     CACHE_TTL_SECONDS: process.env['CACHE_TTL_SECONDS'],
     INSTRUMENT_CACHE_TTL_HOURS: process.env['INSTRUMENT_CACHE_TTL_HOURS'],
     RISK_FREE_RATE: process.env['RISK_FREE_RATE'],

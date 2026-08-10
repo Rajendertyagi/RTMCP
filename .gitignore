@@ -9,6 +9,10 @@ dist/
 .env.local
 .env.*.local
 
+# Broker OAuth tokens (git-ignored secrets)
+.upstox-token.json
+.angel-token.json
+
 # IDE
 .vscode/
 .idea/
