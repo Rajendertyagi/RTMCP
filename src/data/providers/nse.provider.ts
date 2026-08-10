@@ -246,12 +246,33 @@ export class NSEProvider extends BaseProvider {
   // ── Session management ─────────────────────────────────────────────────
 
   /**
-   * Pages to "open" when establishing a session. NSE's anti-bot only issues the
-   * cookie that the stricter APIs (notably /api/option-chain-indices) accept
-   * AFTER you've visited the matching page — visiting just "/" is not enough,
-   * which is why the option-chain call returns 404 without this warm-up.
+   * Maps stricter NSE API path prefixes to the NSE web page that actually
+   * serves them. NSE's anti-bot only accepts these API calls when the request
+   * carries (a) a session cookie obtained from visiting the matching page and
+   * (b) a Referer pointing at that page — sending the bare home-page Referer
+   * gets a 404, which is why option-chain / 52-week / FII-DII calls failed
+   * before this mapping existed. (Verified 2026-08-11: the endpoint URLs
+   * themselves are correct and current — NSE's WAF edge-blocks them rather
+   * than 404-ing the path — so the issue was always the anti-bot Referer, not
+   * a stale URL.) Endpoints NOT listed here keep the home-page Referer/cookie,
+   * which is sufficient for the looser public APIs (allIndices, quote-equity,
+   * historical, …).
    */
-  private static readonly SESSION_SEED_PATHS = ['/', '/option-chain/indices'];
+  private static readonly PAGE_CONTEXT: ReadonlyArray<{ prefix: string; page: string }> = [
+    { prefix: '/api/option-chain-indices', page: '/option-chain/indices' },
+    { prefix: '/api/option-chain-equities', page: '/option-chain/equities' },
+    { prefix: '/api/equity-top-52-week-high', page: '/market-data/equity-market-watch/hi-low-52-week' },
+    { prefix: '/api/equity-top-52-week-low', page: '/market-data/equity-market-watch/hi-low-52-week' },
+    { prefix: '/api/fiidiiCMC', page: '/products-services/fii-statistics-equity-derivatives' },
+    { prefix: '/api/fiidiiFO', page: '/products-services/fii-statistics-equity-derivatives' },
+    { prefix: '/api/fiioiInteger', page: '/products-services/fii-statistics-equity-derivatives' },
+  ];
+
+  /** Pages to "open" when warming a session — home plus every stricter page. */
+  private static readonly SESSION_SEED_PATHS: readonly string[] = [
+    '/',
+    ...new Set(NSEProvider.PAGE_CONTEXT.map((c) => c.page)),
+  ];
 
   private async refreshSession(): Promise<void> {
     console.error('[NSE] Refreshing session cookies …');
@@ -325,19 +346,13 @@ export class NSEProvider extends BaseProvider {
   }
 
   /**
-   * NSE's stricter APIs (option-chain especially) only accept requests whose
-   * Referer matches the page that actually serves them — sending the bare home
-   * page Referer gets a 404 from the anti-bot. Map the option-chain API paths
-   * to their originating pages; everything else keeps the home page Referer.
+   * Resolve the Referer NSE expects for a given API path. Stricter endpoints
+   * need their originating page (see PAGE_CONTEXT); everything else falls back
+   * to the home page, which NSE accepts for the looser public APIs.
    */
   private refererForPath(path: string): string {
-    if (path.startsWith('/api/option-chain-indices')) {
-      return `${NSE_BASE}/option-chain/indices`;
-    }
-    if (path.startsWith('/api/option-chain-equities')) {
-      return `${NSE_BASE}/option-chain/equities`;
-    }
-    return `${NSE_BASE}/`;
+    const match = NSEProvider.PAGE_CONTEXT.find((c) => path.startsWith(c.prefix));
+    return `${NSE_BASE}${match ? match.page : '/'}`;
   }
 
   private isSessionStale(): boolean {
