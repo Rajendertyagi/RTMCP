@@ -92,6 +92,29 @@ export interface Instrument {
   exchange: string;
 }
 
+/** A single India VIX data point (EOD). */
+export interface VixPoint {
+  date: string;        // DD-Mon-YYYY as returned by NSE
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  prevClose: number;
+  vixPtsChg: number;   // absolute change vs previous close
+  vixPctChg: number;   // percentage change vs previous close
+}
+
+/** India VIX result: the most recent reading plus a recent history window. */
+export interface IndiaVixResult {
+  current: {
+    value: number;
+    timestamp: string;  // DD-Mon-YYYY of the latest reading
+    change?: number;
+    pChange?: number;
+  };
+  history: VixPoint[];
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -129,6 +152,9 @@ export interface DataProvider {
   /** Check market status */
   getMarketStatus(): Promise<MarketStatus>;
 
+  /** Get India VIX (volatility index) — current reading + recent history */
+  getIndiaVix(days?: number): Promise<IndiaVixResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -151,6 +177,7 @@ export abstract class BaseProvider implements DataProvider {
   ): Promise<CandleData[]>;
   abstract getInstruments(exchange?: string): Promise<Instrument[]>;
   abstract getMarketStatus(): Promise<MarketStatus>;
+  abstract getIndiaVix(days?: number): Promise<IndiaVixResult>;
 
   isReady(): boolean {
     return this._ready;

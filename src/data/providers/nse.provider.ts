@@ -18,6 +18,8 @@ import {
   MarketStatus,
   CandleData,
   Instrument,
+  VixPoint,
+  IndiaVixResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -86,6 +88,15 @@ function parseNSEDate(raw: string): string {
   const mon = months[m[2]];
   if (!mon) return raw;
   return `${m[3]}-${mon}-${day}`;
+}
+
+/**
+ * Format a Date as NSE's query format "DD-MM-YYYY" (used by history endpoints).
+ */
+function toQueryDate(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}-${mm}-${d.getFullYear()}`;
 }
 
 /** Sleep helper. */
@@ -602,6 +613,55 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  async getIndiaVix(days = 30): Promise<IndiaVixResult> {
+    // NSE's VIX history endpoint needs a DD-MM-YYYY range.
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+
+    const path =
+      `/api/historicalOR/vixhistory?from=${toQueryDate(from)}&to=${toQueryDate(to)}`;
+
+    const raw = await this.nseFetch<NseVixHistoryResponse>(path);
+    const rows = raw.data ?? [];
+
+    if (!rows.length) {
+      throw new Error(
+        'NSE returned no India VIX history for the requested range. ' +
+          'The market may be closed or NSE may be undergoing maintenance. Try again later.',
+      );
+    }
+
+    // Map raw rows into our normalised VixPoint shape.
+    const history: VixPoint[] = rows.map((r) => ({
+      date: r.EOD_TIMESTAMP ?? '',
+      open: r.EOD_OPEN_INDEX_VAL ?? 0,
+      high: r.EOD_HIGH_INDEX_VAL ?? 0,
+      low: r.EOD_LOW_INDEX_VAL ?? 0,
+      close: r.EOD_CLOSE_INDEX_VAL ?? 0,
+      prevClose: r.EOD_PREV_CLOSE ?? 0,
+      vixPtsChg: r.VIX_PTS_CHG ?? 0,
+      vixPctChg: r.VIX_PERC_CHG ?? 0,
+    }));
+
+    // Normalise ordering (NSE usually returns newest-first); pick the most
+    // recent reading as "current".
+    history.sort((a, b) =>
+      parseNSEDate(a.date).localeCompare(parseNSEDate(b.date)),
+    );
+    const latest = history[history.length - 1];
+
+    return {
+      current: {
+        value: latest.close,
+        timestamp: latest.date,
+        change: latest.vixPtsChg,
+        pChange: latest.vixPctChg,
+      },
+      history,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -831,6 +891,23 @@ interface NseMarketStatusResponse {
     marketStatus?: string;
     tradeDate?: string;
   }>;
+}
+
+// ── India VIX (volatility index) response shapes ─────────────────────────
+
+interface NseVixHistoryRow {
+  EOD_TIMESTAMP?: string;
+  EOD_OPEN_INDEX_VAL?: number;
+  EOD_HIGH_INDEX_VAL?: number;
+  EOD_LOW_INDEX_VAL?: number;
+  EOD_CLOSE_INDEX_VAL?: number;
+  EOD_PREV_CLOSE?: number;
+  VIX_PTS_CHG?: number;
+  VIX_PERC_CHG?: number;
+}
+
+interface NseVixHistoryResponse {
+  data?: NseVixHistoryRow[];
 }
 
 interface NseLiveDerivativesRow {

@@ -16,6 +16,7 @@ import {
   MarketStatus,
   CandleData,
   Instrument,
+  IndiaVixResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -549,6 +550,15 @@ export class ZerodhaProvider extends BaseProvider {
       status,
       timestamp: now.toISOString(),
     };
+  }
+
+  async getIndiaVix(_days?: number): Promise<IndiaVixResult> {
+    // The Zerodha provider focuses on instruments/quotes and does not expose
+    // the India VIX volatility index. Use the free NSE provider for VIX data.
+    throw new Error(
+      'India VIX is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply VIX data — switch to the NSE provider to use this feature.',
+    );
   }
 
   // ── Private helpers ────────────────────────────────────────────────────

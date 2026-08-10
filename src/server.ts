@@ -833,6 +833,39 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'india_vix',
+    'Get the India VIX — the market "fear gauge" that measures how volatile traders expect the NSE to be over the next ~30 days. Returns the latest reading (with its day change) plus a recent history window. Lower VIX ≈ calm market, higher VIX ≈ fearful/jumpy market. Useful context before reading option prices or implied volatility.',
+    {
+      days: z.number().int().min(1).max(365).optional()
+        .describe('How many past days of VIX history to return (default 30, max 365).'),
+    },
+    async ({ days }) => {
+      await ensureProvider();
+      const result = await provider.getIndiaVix(days);
+
+      const cur = result.current;
+      const arrow = (cur.change ?? 0) >= 0 ? '▲' : '▼';
+      const lines: string[] = [
+        `🌊 India VIX — ${cur.timestamp}`,
+        `Current: ${cur.value.toFixed(2)}  ${arrow} ${Math.abs(cur.change ?? 0).toFixed(2)} (${cur.pChange?.toFixed(2)}%)`,
+        '',
+        `Recent (last ${Math.min(result.history.length, 10)} sessions):`,
+      ];
+
+      // Show the 10 most recent sessions, newest first.
+      const recent = result.history.slice(-10).reverse();
+      for (const p of recent) {
+        lines.push(
+          `  ${p.date}: ${p.close.toFixed(2)}  (O ${p.open.toFixed(2)} / H ${p.high.toFixed(2)} / L ${p.low.toFixed(2)})`,
+        );
+      }
+
+      lines.push('', '↳ Low VIX ≈ calm market · High VIX ≈ fearful/jumpy market');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {
