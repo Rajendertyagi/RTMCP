@@ -179,6 +179,101 @@ export interface TopMoversResult {
   losers: MarketMover[];
 }
 
+// ── Feature #6: live indices & constituent lists ──────────────────────────
+
+/** A single live index quote (current value + day change). */
+export interface IndexValue {
+  symbol: string;          // NSE index name, e.g. "NIFTY 50"
+  indexSymbol: string;     // trading symbol, e.g. "NIFTY"
+  last: number;            // current value
+  variation: number;       // absolute day change
+  percentChange: number;   // % day change
+  open: number;
+  high: number;
+  low: number;
+  previousClose: number;
+  timeVal: string;         // timestamp of the snapshot
+}
+
+/** Snapshot of all major NSE index values. */
+export interface LiveIndicesResult {
+  asOf: string;
+  indices: IndexValue[];
+}
+
+/** A single constituent of an index (e.g. one NIFTY 50 stock). */
+export interface IndexConstituent {
+  symbol: string;
+  lastPrice: number;
+  change: number;
+  pChange: number;
+  open: number;
+  high: number;
+  low: number;
+  previousClose: number;
+  volume: number;
+  value: number;           // total traded value (₹)
+}
+
+/** Constituent list for a named index (NIFTY 50, NIFTY 500, …). */
+export interface IndexConstituentsResult {
+  index: string;
+  asOf: string;
+  constituents: IndexConstituent[];
+}
+
+// ── Feature #7: IPO tracker ───────────────────────────────────────────────
+
+/** A currently active / ongoing IPO. */
+export interface IpoInfo {
+  symbol: string;
+  companyName: string;
+  series: string;
+  issueStartDate: string;
+  issueEndDate: string;
+  status: string;
+  issueSize: number;       // ₹ crore
+  issuePrice: string;      // price band as returned by NSE (may be a range)
+  noOfSharesOffered: number;
+}
+
+/** A pre-open (listing-day auction) IPO entry. */
+export interface IpoPreOpen {
+  symbol: string;
+  series: string;
+  prevClose: number;
+  iep: number;             // indicative equilibrium price
+  change: number;
+  perChange: number;
+  status: string;
+  totalBuyQuantity: number;
+  totalSellQuantity: number;
+  lastUpdateTime: string;
+}
+
+/** A single row from NSE's IPO tracker summary (recently listed IPOs). */
+export interface IpoTrackerItem {
+  symbol: string;
+  companyName: string;
+  listedOn: string;        // listing date YYYY-MM-DD
+  issuePrice: number;
+  listedDayClose: number;
+  listedDayGain: number;
+  listedDayGainPer: number;
+  ltp: number;             // last traded price
+  gainLoss: number;
+  gainLossPer: number;
+  marketType: string;      // SME / Mainboard
+}
+
+/** IPO tracker snapshot: currently open + pre-open + summary. */
+export interface IpoTrackerResult {
+  asOf: string;
+  current: IpoInfo[];
+  preOpen: IpoPreOpen[];
+  summary: IpoTrackerItem[];
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -228,6 +323,15 @@ export interface DataProvider {
   /** Get top gainers & losers (market movers) for an index */
   getTopMovers(index?: string): Promise<TopMoversResult>;
 
+  /** Get live values of all major NSE indices */
+  getLiveIndices(): Promise<LiveIndicesResult>;
+
+  /** Get the constituent list of a named index (e.g. NIFTY 50, NIFTY 500) */
+  getIndexConstituents(index: string): Promise<IndexConstituentsResult>;
+
+  /** Get the IPO tracker: current IPOs, pre-open IPOs, and a summary */
+  getIpoTracker(): Promise<IpoTrackerResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -254,6 +358,9 @@ export abstract class BaseProvider implements DataProvider {
   abstract getPreMarketDerivatives(key?: 'FUTIDX' | 'FUTSTK'): Promise<PreMarketDerivativesResult>;
   abstract getFoList(): Promise<FoListResult>;
   abstract getTopMovers(index?: string): Promise<TopMoversResult>;
+  abstract getLiveIndices(): Promise<LiveIndicesResult>;
+  abstract getIndexConstituents(index: string): Promise<IndexConstituentsResult>;
+  abstract getIpoTracker(): Promise<IpoTrackerResult>;
 
   isReady(): boolean {
     return this._ready;

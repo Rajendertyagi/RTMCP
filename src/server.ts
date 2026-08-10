@@ -1041,6 +1041,134 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'live_indices',
+    'Current values of all major NSE indices (NIFTY 50, BANKNIFTY, NIFTY IT, sectoral indices, INDIA VIX, …) — last price, day change, and % change at a glance. Use this for a quick "where is the market right now" snapshot before drilling into a specific index or running option analysis. Best read during or shortly after market hours.',
+    {},
+    async () => {
+      await ensureProvider();
+      const result = await provider.getLiveIndices();
+
+      const lines: string[] = [`📊 Live Indices — as of ${result.asOf}`, ''];
+
+      // Show the widely-tracked ones first, then the rest.
+      const priority = [
+        'NIFTY 50', 'NIFTY BANK', 'INDIA VIX', 'NIFTY FIN SERVICE',
+        'NIFTY MIDCAP SELECT', 'NIFTY NEXT 50',
+      ];
+      const byPriority = [...result.indices].sort((a, b) => {
+        const ia = priority.indexOf(a.symbol);
+        const ib = priority.indexOf(b.symbol);
+        if (ia === -1 && ib === -1) return a.symbol.localeCompare(b.symbol);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      });
+
+      for (const idx of byPriority) {
+        const arrow = idx.variation >= 0 ? '▲' : '▼';
+        lines.push(
+          `  ${idx.symbol.padEnd(22)} ${idx.last.toFixed(2).padStart(10)}  ${arrow} ${idx.variation >= 0 ? '+' : ''}${idx.variation.toFixed(2)} (${idx.percentChange >= 0 ? '+' : ''}${idx.percentChange.toFixed(2)}%)`,
+        );
+      }
+
+      lines.push('', '↳ Figures are live during market hours; outside hours they show the last close.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'index_constituents',
+    'List the stocks that make up a named NSE index — by default NIFTY 50, or pass NIFTY 500 / NIFTY BANK / NIFTY IT / any sectoral index. Each constituent shows its last price, day change %, and traded volume — handy for seeing which stocks are driving an index. Defaults to NIFTY 50.',
+    {
+      index: z.string().optional()
+        .describe('Index name, e.g. NIFTY 50 (default), NIFTY 500, NIFTY BANK, NIFTY IT.'),
+    },
+    async ({ index }) => {
+      await ensureProvider();
+      const name = index ?? 'NIFTY 50';
+      const result = await provider.getIndexConstituents(name);
+
+      if (!result.constituents.length) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text:
+              `No constituents returned for "${result.index}". ` +
+              'Check the index name (use NIFTY 50, NIFTY 500, NIFTY BANK, NIFTY IT, …), or try again during market hours.',
+          }],
+        };
+      }
+
+      const lines: string[] = [`🧩 ${result.index} — ${result.constituents.length} constituents (as of ${result.asOf})`, ''];
+
+      const fmt = (c: { symbol: string; lastPrice: number; pChange: number; volume: number }) =>
+        `  ${c.symbol.padEnd(14)} ₹${c.lastPrice.toFixed(2).padStart(10)}  ${c.pChange >= 0 ? '+' : ''}${c.pChange.toFixed(2)}%  vol ${c.volume.toLocaleString('en-IN')}`;
+
+      lines.push('Top 15 by % change (gainers & losers):');
+      const sorted = [...result.constituents].sort((a, b) => b.pChange - a.pChange);
+      for (const c of sorted.slice(0, 15)) lines.push(fmt(c));
+
+      lines.push('', `↳ Full list has ${result.constituents.length} stocks; ask for a specific one or a sector.`);
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'ipo_tracker',
+    'IPO watch — what is happening in the new-listings market right now. Returns three things in one view: (1) currently open IPOs you can still apply to, (2) pre-open (listing-day auction) IPOs with their indicative price, and (3) a summary of recently listed IPOs with listing-day gain/loss. Use it to track new issues without leaving the assistant.',
+    {},
+    async () => {
+      await ensureProvider();
+      const result = await provider.getIpoTracker();
+
+      const lines: string[] = ['🆕 IPO Tracker', ''];
+
+      // (1) Currently open
+      lines.push(`— Currently open (${result.current.length}) —`);
+      if (result.current.length) {
+        for (const ipo of result.current) {
+          lines.push(
+            `  ${ipo.symbol.padEnd(12)} ${ipo.companyName} · ${ipo.series} · ${ipo.status}` +
+            (ipo.issuePrice ? ` · ₹${ipo.issuePrice}` : '') +
+            ` · ${ipo.issueStartDate} → ${ipo.issueEndDate}`,
+          );
+        }
+      } else {
+        lines.push('  None open right now.');
+      }
+
+      // (2) Pre-open
+      lines.push('', `— Pre-open / listing today (${result.preOpen.length}) —`);
+      if (result.preOpen.length) {
+        for (const p of result.preOpen) {
+          const arrow = p.change >= 0 ? '▲' : '▼';
+          lines.push(
+            `  ${p.symbol.padEnd(12)} IEP ₹${p.iep.toFixed(2)}  ${arrow} ${p.perChange >= 0 ? '+' : ''}${p.perChange.toFixed(2)}%  (prev close ₹${p.prevClose.toFixed(2)})`,
+          );
+        }
+      } else {
+        lines.push('  None in pre-open right now.');
+      }
+
+      // (3) Summary
+      lines.push('', `— Recently listed (${result.summary.length}) —`);
+      if (result.summary.length) {
+        for (const s of result.summary.slice(0, 12)) {
+          const arrow = s.gainLossPer >= 0 ? '▲' : '▼';
+          lines.push(
+            `  ${s.symbol.padEnd(12)} ${s.marketType.padEnd(9)} issued ₹${s.issuePrice.toFixed(2)} · listed ₹${s.listedDayClose.toFixed(2)} (${arrow} ${s.listedDayGainPer >= 0 ? '+' : ''}${s.listedDayGainPer.toFixed(2)}% on day 1)`,
+          );
+        }
+      } else {
+        lines.push('  No recently-listed data available.');
+      }
+
+      lines.push('', '↳ "IEP" = indicative equilibrium price during the listing-day auction.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

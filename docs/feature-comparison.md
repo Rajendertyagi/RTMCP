@@ -50,8 +50,8 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 3 | **Pre-market derivatives sentiment** | Early read on how the day might open, from derivative activity. | Options-relevant | ➕ Added | Medium |
 | 4 | **F&O tradable list** | A list of stocks & indices that actually have options/futures, so you can pick what to analyze. | Utility | ➕ Added | Medium |
 | 5 | **Top movers (gainers / losers)** | Which stocks or indices moved the most today — a quick market feel. | Broad market | ➕ Added | Low |
-| 6 | **Live indices / Nifty 50 & 500 lists** | Current values of major indices and their constituent lists. | Broad market | 📋 Planned | Low |
-| 7 | **IPO tracker** | Current IPOs, pre-open IPOs, and a summary view. | Broad market | 📋 Planned | Low |
+| 6 | **Live indices / Nifty 50 & 500 lists** | Current values of major indices and their constituent lists. | Broad market | ➕ Added | Low |
+| 7 | **IPO tracker** | Current IPOs, pre-open IPOs, and a summary view. | Broad market | ➕ Added | Low |
 | 8 | **Corporate actions / announcements** | Dividends, bonuses, board meetings, etc. | Broad market | 📋 Planned | Low |
 | 9 | **Stock & index charts** | Historical price charts for a symbol. | Broad market | ➕ Added | Low |
 | 10 | **Block deals / insider trading** | Large trades and insider activity feed. | Broad market | 📋 Planned | Low |
@@ -70,6 +70,10 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 > **➕ Built — Top movers (item #5):** New `top_movers` tool (plus `getTopMovers()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's live-analysis top-gainers / top-losers feeds for an index (default NIFTY; override with BANKNIFTY, FINNIFTY, NIFTY 50, …) and shows the top 10 gainers and losers by % change with last price. Only populated during market hours. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 > **➕ Built — Stock & index charts (item #9):** New `stock_index_chart` tool. **Fills the previously-empty `getHistoricalData()` on the NSE provider** (no new parallel method — reuses the existing interface slot, following the "don't duplicate" rule). Pulls daily OHLCV for equities (`/api/historical/cm/equity`) and indices (`/api/historical/indicesHistory`, mapping our trading symbol → NSE indexType), with optional `day`/`week` aggregation. Returns the series + summary (period high/low, avg close, total return). Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — Live indices / Nifty 50 & 500 lists (item #6):** Two new tools. `live_indices` shows the current value, day change, and % change of all major NSE indices (reuses the existing `/api/allIndices` feed the NSE provider already fetched for quotes). `index_constituents` lists the stocks inside a named index — defaults to **NIFTY 50**, pass `NIFTY 500` / `NIFTY BANK` / `NIFTY IT` / any sectoral index — pulling each constituent's price, % change, and volume from `/api/equity-stock-indices`. A small `INDEX_NAME_MAP` resolves the many ways a user might name an index to the exact NSE string (avoids guessing/hardcoding in the endpoint call). Provider methods `getLiveIndices()` / `getIndexConstituents()` live on the NSE provider; Zerodha throws "not supported". Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — IPO tracker (item #7):** New `ipo_tracker` tool (plus `getIpoTracker()` on the NSE provider; Zerodha throws "not supported"). One call returns three NSE feeds: **currently open IPOs** (`/api/ipo-current-issue`), **pre-open / listing-day auction IPOs** with indicative equilibrium price (`/api/special-preopen-listing`), and a **recently-listed summary** with listing-day gain/loss (`/api/NextApi/apiClient?functionName=getIPOTrackerSummary`). Shows open issues you can still apply to, today's listings, and how recent IPOs performed on day 1. Only populated during/around issue windows. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 ---
 

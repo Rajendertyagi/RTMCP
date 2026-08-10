@@ -20,6 +20,9 @@ import {
   PreMarketDerivativesResult,
   FoListResult,
   TopMoversResult,
+  LiveIndicesResult,
+  IndexConstituentsResult,
+  IpoTrackerResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -590,6 +593,33 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'Top movers (gainers/losers) is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply the live-analysis feed.',
+    );
+  }
+
+  async getLiveIndices(): Promise<LiveIndicesResult> {
+    // The Zerodha provider does not expose the NSE all-indices feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Live indices is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/allIndices feed.',
+    );
+  }
+
+  async getIndexConstituents(_index: string): Promise<IndexConstituentsResult> {
+    // The Zerodha provider does not expose the NSE index-constituents feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Index constituents is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/equity-stock-indices feed.',
+    );
+  }
+
+  async getIpoTracker(): Promise<IpoTrackerResult> {
+    // The Zerodha provider does not expose the NSE IPO tracker feeds.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'IPO tracker is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the IPO issue / pre-open / tracker feeds.',
     );
   }
 
