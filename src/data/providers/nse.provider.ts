@@ -38,6 +38,13 @@ import {
   CorporateActionsResult,
   BlockDeal,
   BlockDealsResult,
+  FiiDiiEntry,
+  FiiDiiResult,
+  ParticipantOiInstrument,
+  ParticipantOiResult,
+  Week52Item,
+  Week52Result,
+  MarketBreadthResult,
 } from './base.provider.js';
 
 import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.js';
@@ -1119,6 +1126,108 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  // ── Feature #11: FII/DII activity ────────────────────────────────────────
+
+  async getFiiDiiActivity(): Promise<FiiDiiResult> {
+    const raw = await this.nseFetch<NseFiiDiiResponse>('/api/fiidiiCMC');
+    const rows = Array.isArray(raw) ? raw : [];
+
+    const entries: FiiDiiEntry[] = rows.map((r) => ({
+      category: r.category ?? '',
+      date: r.date ?? '',
+      buyValue: Number(r.buyValue ?? 0),
+      sellValue: Number(r.sellValue ?? 0),
+      netValue: Number(r.netValue ?? 0),
+    }));
+
+    return {
+      asOf: new Date().toISOString(),
+      date: entries[0]?.date ?? '',
+      entries,
+    };
+  }
+
+  // ── Feature #12: participant (FII) open interest ──────────────────────────
+
+  async getParticipantOi(): Promise<ParticipantOiResult> {
+    const raw = await this.nseFetch<Record<string, NseFiiOiRow[]>>('/api/fiioiInteger');
+    const instruments: ParticipantOiInstrument[] = [];
+
+    for (const [key, list] of Object.entries(raw ?? {})) {
+      if (!Array.isArray(list) || list.length === 0) continue;
+      const latest = list[list.length - 1];
+      const longPos = Number(latest.longPosition ?? 0);
+      const shortPos = Number(latest.shortPosition ?? 0);
+      instruments.push({
+        instrument: key.replace(/^FII OI in /i, ''),
+        asOf: latest.date ?? '',
+        longPosition: longPos,
+        shortPosition: shortPos,
+        longPercentage: Number(latest.longPercentage ?? 0),
+        shortPercentage: Number(latest.shortPercentage ?? 0),
+        totalOI: longPos + shortPos,
+      });
+    }
+
+    return {
+      asOf: new Date().toISOString(),
+      instruments,
+    };
+  }
+
+  // ── Feature #13: 52-week high / low ───────────────────────────────────────
+
+  async getWeek52HighLow(): Promise<Week52Result> {
+    const [highRaw, lowRaw] = await Promise.all([
+      this.nseFetch<NseWeek52Response>('/api/equity-top-52-week-high'),
+      this.nseFetch<NseWeek52Response>('/api/equity-top-52-week-low'),
+    ]);
+
+    const toItem = (r: NseWeek52Row): Week52Item => ({
+      symbol: r.symbol ?? r.SYMBOL ?? '',
+      series: r.series ?? r.SERIES ?? '',
+      lastPrice: Number(r.ltp ?? r.lastPrice ?? r.LTP ?? 0),
+      previousClose: Number(r.pdc ?? r.previousClose ?? r.PDC ?? 0),
+      change: Number(r.change ?? 0),
+      pChange: Number(r.percentChange ?? r.pChange ?? r.PERCENTCHANGE ?? 0),
+    });
+
+    const highs = (Array.isArray(highRaw) ? highRaw : highRaw?.data ?? []).map(toItem);
+    const lows = (Array.isArray(lowRaw) ? lowRaw : lowRaw?.data ?? []).map(toItem);
+
+    return {
+      asOf: new Date().toISOString(),
+      highs,
+      lows,
+    };
+  }
+
+  // ── Feature #14: market breadth ───────────────────────────────────────────
+
+  async getMarketBreadth(index?: string): Promise<MarketBreadthResult> {
+    const category = (index ?? 'NIFTY 50').trim().toUpperCase();
+    const resolved = INDEX_NAME_MAP[category] ?? category;
+    const encoded = resolved.replace(/&/g, '%26').replace(/ /g, '%20');
+
+    const raw = await this.nseFetch<NseBreadthResponse>(
+      `/api/equity-stock-indices?index=${encoded}`,
+    );
+
+    const advances = Number(raw.advances ?? 0);
+    const declines = Number(raw.declines ?? 0);
+    const unchanged = Number(raw.unchanged ?? 0);
+
+    return {
+      index: category,
+      asOf: new Date().toISOString(),
+      advances,
+      declines,
+      unchanged,
+      total: advances + declines + unchanged,
+      adRatio: declines > 0 ? Number((advances / declines).toFixed(2)) : advances,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -1600,4 +1709,56 @@ interface NseBlockDealRow {
 
 interface NseBlockDealResponse {
   data?: NseBlockDealRow[];
+}
+
+// ── Feature #11: FII/DII activity (fiidiiCMC) ──────────────────────────────
+
+interface NseFiiDiiRow {
+  date?: string;
+  category?: string;       // FII / DII / PRO / CLIENT
+  buyValue?: number | string;
+  sellValue?: number | string;
+  netValue?: number | string;
+}
+
+type NseFiiDiiResponse = NseFiiDiiRow[];
+
+// ── Feature #12: participant (FII) open interest (fiioiInteger) ───────────
+
+interface NseFiiOiRow {
+  date?: string;
+  future?: string;
+  longPosition?: number | string;
+  shortPosition?: number | string;
+  longPercentage?: number | string;
+  shortPercentage?: number | string;
+}
+
+// ── Feature #13: 52-week high / low ───────────────────────────────────────
+
+interface NseWeek52Row {
+  symbol?: string;
+  SYMBOL?: string;
+  series?: string;
+  SERIES?: string;
+  ltp?: number | string;
+  LTP?: number | string;
+  lastPrice?: number | string;
+  pdc?: number | string;
+  PDC?: number | string;
+  previousClose?: number | string;
+  change?: number | string;
+  percentChange?: number | string;
+  PERCENTCHANGE?: number | string;
+  pChange?: number | string;
+}
+
+type NseWeek52Response = NseWeek52Row[] | { data?: NseWeek52Row[] };
+
+// ── Feature #14: market breadth (equity-stock-indices advances/declines) ──
+
+interface NseBreadthResponse {
+  advances?: number | string;
+  declines?: number | string;
+  unchanged?: number | string;
 }

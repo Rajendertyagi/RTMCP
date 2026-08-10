@@ -1243,6 +1243,116 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'fii_dii_activity',
+    'Daily FII/DII activity in the Indian cash market — how much Foreign (FII) and Domestic (DII) Institutional Investors bought vs sold, as net ₹ crore. Positive FII net = foreign money flowing in (generally bullish); negative = flowing out. Also shows PRO and CLIENT figures. Published once per trading day after market close.',
+    {},
+    async () => {
+      await ensureProvider();
+      const result = await provider.getFiiDiiActivity();
+
+      if (!result.entries.length) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: 'No FII/DII activity data available right now. This is published once per trading day (after market close). Try again later.',
+          }],
+        };
+      }
+
+      const lines: string[] = [
+        `🏦 FII / DII Activity — ${result.date || 'latest'}`,
+        '',
+        'Category     Buy(₹cr)    Sell(₹cr)    Net(₹cr)',
+        '─────────  ──────────  ──────────  ──────────',
+      ];
+      for (const e of result.entries) {
+        const net = `${e.netValue >= 0 ? '+' : ''}${e.netValue.toLocaleString('en-IN')}`.padStart(11);
+        lines.push(
+          `${e.category.padEnd(10)} ${String(e.buyValue.toLocaleString('en-IN')).padStart(11)} ${String(e.sellValue.toLocaleString('en-IN')).padStart(11)} ${net}`,
+        );
+      }
+      lines.push('', '↳ FII = foreign institutions, DII = domestic institutions. Large FII net inflows are typically read as bullish.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'participant_oi',
+    'FII open-interest positioning across futures & options — how much OI foreign institutions hold LONG vs SHORT in index/stock futures and options. A high long % in index futures suggests bullish institutional sentiment; a high short % suggests bearish hedging. Refreshed intraday.',
+    {},
+    async () => {
+      await ensureProvider();
+      const result = await provider.getParticipantOi();
+
+      if (!result.instruments.length) {
+        return {
+          content: [{ type: 'text' as const, text: 'No participant OI data available right now. Try during market hours.' }],
+        };
+      }
+
+      const fmt = (i: { instrument: string; longPosition: number; shortPosition: number; longPercentage: number; shortPercentage: number; totalOI: number }) =>
+        `  ${i.instrument.padEnd(15)} long ₹${i.longPosition.toLocaleString('en-IN')}cr (${i.longPercentage.toFixed(1)}%) · short ₹${i.shortPosition.toLocaleString('en-IN')}cr (${i.shortPercentage.toFixed(1)}%) · total ₹${i.totalOI.toLocaleString('en-IN')}cr`;
+      const lines: string[] = ['📊 FII Open Interest (Long vs Short)', ''];
+      for (const i of result.instruments) lines.push(fmt(i));
+      lines.push('', '↳ Shows where FIIs are positioned. Long-heavy = bullish bias; short-heavy = bearish / hedged.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'week_52_high_low',
+    'Lists stocks hitting fresh 52-week highs and 52-week lows today. A high count of 52-week highs signals strong broad participation; a surge in 52-week lows signals broad weakness/distress. Optional limit controls rows per list.',
+    {
+      limit: z.number().int().positive().max(50).optional().describe('Max rows per list (default 25)'),
+    },
+    async ({ limit }) => {
+      await ensureProvider();
+      const result = await provider.getWeek52HighLow();
+      const n = limit ?? 25;
+
+      const fmt = (it: { symbol: string; lastPrice: number; pChange: number }) =>
+        `  ${it.symbol.padEnd(12)} ₹${it.lastPrice.toFixed(2).padStart(10)} ${it.pChange >= 0 ? '+' : ''}${it.pChange.toFixed(2)}%`;
+      const lines: string[] = [`📈 52-Week HIGH (${result.highs.length} stocks)`, ''];
+      if (!result.highs.length) lines.push('  (none reported)');
+      for (const it of result.highs.slice(0, n)) lines.push(fmt(it));
+      lines.push('', `📉 52-Week LOW (${result.lows.length} stocks)`, '');
+      if (!result.lows.length) lines.push('  (none reported)');
+      for (const it of result.lows.slice(0, n)) lines.push(fmt(it));
+      lines.push('', '↳ Counts of highs vs lows are a classic market-breadth gauge.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'market_breadth',
+    'Market breadth for an index — how many constituents are advancing (up), declining (down), or unchanged, plus the advance-decline ratio. Ratio > 1 = more stocks rising than falling (bullish breadth); < 1 = weak breadth. Default index: NIFTY 50.',
+    {
+      index: z.string().optional().describe('Index name, e.g. NIFTY 50, NIFTY BANK, NIFTY 500 (default NIFTY 50)'),
+    },
+    async ({ index }) => {
+      await ensureProvider();
+      const result = await provider.getMarketBreadth(index);
+
+      const lines: string[] = [
+        `📏 Market Breadth — ${result.index}`,
+        '',
+        `  Advances : ${result.advances}`,
+        `  Declines : ${result.declines}`,
+        `  Unchanged: ${result.unchanged}`,
+        `  Total    : ${result.total}`,
+        `  A/D Ratio: ${result.adRatio}`,
+        '',
+        result.adRatio > 1
+          ? '↳ More stocks advancing than declining — breadth is constructive.'
+          : result.adRatio < 1
+            ? '↳ More stocks declining than advancing — breadth is weak.'
+            : '↳ Advances and declines are balanced.',
+      ];
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

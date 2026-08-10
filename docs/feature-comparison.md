@@ -55,6 +55,10 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 8 | **Corporate actions / announcements** | Dividends, bonuses, board meetings, etc. | Broad market | ➕ Added | Low |
 | 9 | **Stock & index charts** | Historical price charts for a symbol. | Broad market | ➕ Added | Low |
 | 10 | **Block deals / insider trading** | Large trades and insider activity feed. | Broad market | ➕ Added | Low |
+| 11 | **FII/DII Activity** | Daily foreign & domestic institutional buy/sell/net in the cash market. | Broad market | ➕ Added | Medium |
+| 12 | **Participant OI (FII open interest)** | How much FII open interest is held long vs short across futures & options. | Options-relevant | ➕ Added | Medium |
+| 13 | **52-Week High / Low** | Lists stocks at fresh 52-week highs and lows. | Broad market | ➕ Added | Low |
+| 14 | **Market Breadth** | Advances/declines/unchanged + A/D ratio for an index. | Broad market | ➕ Added | Low |
 
 > **✅ Already present — Market Status (item #2):** The tool already provides this in two levels:
 > - **Basic:** the `market_status` tool and `market://status` resource return open/closed (🟢/🔴).
@@ -78,6 +82,14 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 > **➕ Built — Corporate actions / announcements (item #8):** New `corporate_actions` tool (plus `getCorporateActions()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's `/api/corporates-corporateActions` feed (the same source NSE uses for its corporate-actions page): dividends, bonuses, stock splits, buybacks, etc. Optional `symbol` filter (e.g. RELIANCE) and `fromDate`/`toDate` window (default: yesterday → ~90 days ahead, held in a named `CORP_ACTION_LOOKAHEAD_DAYS` constant rather than an inline magic number). Shows purpose + ex-date + record date. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 > **➕ Built — Block deals (item #10):** New `block_deals` tool (plus `getBlockDeals()` on the NSE provider; Zerodha throws "not supported"). Pulls the live block-deal feed `/api/block-deal` — large negotiated trades (₹10 crore+) reported in the MORNING / AFTERNOON windows — showing symbol, last price, day change %, and total volume/value. A flurry of block deals can signal institutional activity. Only populated during market hours. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — FII/DII Activity (item #11):** New `fii_dii_activity` tool (plus `getFiiDiiActivity()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's `/api/fiidiiCMC` feed — the daily FII / DII / PRO / CLIENT buy, sell, and net figures (₹ crore) in the cash market. Positive FII net = foreign money flowing in (generally bullish). Published once per trading day after close. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — Participant OI (item #12):** New `participant_oi` tool (plus `getParticipantOi()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's `/api/fiioiInteger` feed and reports FII open interest held LONG vs SHORT in index/stock futures and options, with the long/short % — a read on where institutions are positioned. Refreshed intraday. *Trade-off:* this uses the well-known FII-OI endpoint (the canonical "participant OI" NSE exposes); a full FII+DII+Pro+Client breakdown is not on a stable public endpoint, so we surface FII positioning, which is what the market watches. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — 52-Week High / Low (item #13):** New `week_52_high_low` tool (plus `getWeek52HighLow()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's `/api/equity-top-52-week-high` and `/api/equity-top-52-week-low` feeds in parallel and lists the stocks at fresh 52-week extremes (optional `limit`, default 25 per side). Counts of highs vs lows are a classic breadth gauge. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — Market Breadth (item #14):** New `market_breadth` tool (plus `getMarketBreadth()` on the NSE provider; Zerodha throws "not supported"). Reuses the existing `/api/equity-stock-indices` feed (the same one `index_constituents` uses) and reports advances / declines / unchanged plus the advance-decline ratio for an index (default **NIFTY 50**, override with any index via `INDEX_NAME_MAP`). A/D ratio > 1 = more stocks rising than falling. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 ---
 

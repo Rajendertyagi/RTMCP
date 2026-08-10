@@ -25,6 +25,10 @@ import {
   IpoTrackerResult,
   CorporateActionsResult,
   BlockDealsResult,
+  FiiDiiResult,
+  ParticipantOiResult,
+  Week52Result,
+  MarketBreadthResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -644,6 +648,42 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'Block deals is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply the /api/block-deal feed.',
+    );
+  }
+
+  async getFiiDiiActivity(): Promise<FiiDiiResult> {
+    // The Zerodha provider does not expose the NSE FII/DII feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'FII/DII activity is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/fiidiiCMC feed.',
+    );
+  }
+
+  async getParticipantOi(): Promise<ParticipantOiResult> {
+    // The Zerodha provider does not expose the NSE participant-OI feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Participant open interest is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/fiioiInteger feed.',
+    );
+  }
+
+  async getWeek52HighLow(): Promise<Week52Result> {
+    // The Zerodha provider does not expose the NSE 52-week feeds.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      '52-week high/low is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the equity-top-52-week feeds.',
+    );
+  }
+
+  async getMarketBreadth(_index?: string): Promise<MarketBreadthResult> {
+    // The Zerodha provider does not expose the NSE equity-stock-indices feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Market breadth is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/equity-stock-indices feed.',
     );
   }
 

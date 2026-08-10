@@ -320,6 +320,75 @@ export interface BlockDealsResult {
   deals: BlockDeal[];
 }
 
+// ── Feature #11: FII/DII activity ──────────────────────────────────────────
+
+/** A single institutional category's daily buy/sell/net in the cash market. */
+export interface FiiDiiEntry {
+  category: string;        // FII, DII, PRO, CLIENT
+  date: string;            // DD-Mon-YYYY
+  buyValue: number;        // ₹ crore
+  sellValue: number;       // ₹ crore
+  netValue: number;        // ₹ crore (buy - sell)
+}
+
+/** FII/DII daily activity snapshot (cash market). */
+export interface FiiDiiResult {
+  asOf: string;
+  date: string;            // trading date of the data
+  entries: FiiDiiEntry[];
+}
+
+// ── Feature #12: participant (FII) open interest ──────────────────────────
+
+/** FII open-interest positioning for one instrument type. */
+export interface ParticipantOiInstrument {
+  instrument: string;      // Index Options, Stock Options, Index Futures, Stock Futures
+  asOf: string;            // date of the reading
+  longPosition: number;    // ₹ crore notional OI held long
+  shortPosition: number;   // ₹ crore notional OI held short
+  longPercentage: number;  // % of OI held long
+  shortPercentage: number; // % of OI held short
+  totalOI: number;         // long + short
+}
+
+/** Participant (FII) open-interest snapshot across instruments. */
+export interface ParticipantOiResult {
+  asOf: string;
+  instruments: ParticipantOiInstrument[];
+}
+
+// ── Feature #13: 52-week high / low ──────────────────────────────────────
+
+/** A single stock at a 52-week extreme. */
+export interface Week52Item {
+  symbol: string;
+  series: string;
+  lastPrice: number;
+  previousClose: number;
+  change: number;
+  pChange: number;
+}
+
+/** 52-week high and low lists. */
+export interface Week52Result {
+  asOf: string;
+  highs: Week52Item[];
+  lows: Week52Item[];
+}
+
+// ── Feature #14: market breadth ──────────────────────────────────────────
+
+/** Advance/decline breadth for an index. */
+export interface MarketBreadthResult {
+  index: string;
+  asOf: string;
+  advances: number;
+  declines: number;
+  unchanged: number;
+  total: number;
+  adRatio: number;         // advances / declines
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -384,6 +453,18 @@ export interface DataProvider {
   /** Get the live block-deal feed for the current session */
   getBlockDeals(): Promise<BlockDealsResult>;
 
+  /** Get FII/DII daily activity (cash market buy/sell/net). */
+  getFiiDiiActivity(): Promise<FiiDiiResult>;
+
+  /** Get participant (FII) open interest long/short across instruments. */
+  getParticipantOi(): Promise<ParticipantOiResult>;
+
+  /** Get 52-week high & low lists. */
+  getWeek52HighLow(): Promise<Week52Result>;
+
+  /** Get market breadth (advances/declines/unchanged) for an index. */
+  getMarketBreadth(index?: string): Promise<MarketBreadthResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -415,6 +496,11 @@ export abstract class BaseProvider implements DataProvider {
   abstract getIpoTracker(): Promise<IpoTrackerResult>;
   abstract getCorporateActions(symbol?: string, fromDate?: string, toDate?: string): Promise<CorporateActionsResult>;
   abstract getBlockDeals(): Promise<BlockDealsResult>;
+
+  abstract getFiiDiiActivity(): Promise<FiiDiiResult>;
+  abstract getParticipantOi(): Promise<ParticipantOiResult>;
+  abstract getWeek52HighLow(): Promise<Week52Result>;
+  abstract getMarketBreadth(index?: string): Promise<MarketBreadthResult>;
 
   isReady(): boolean {
     return this._ready;
