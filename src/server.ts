@@ -983,6 +983,64 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'stock_index_chart',
+    'Get historical daily (or weekly) price data — open/high/low/close + volume — for any NSE stock or index over a date range, so you can see the price trend ("chart"). For indices use the index name (NIFTY 50, BANKNIFTY, FINNIFTY, …); for stocks use the ticker (RELIANCE, INFY, …). Returns the series plus a summary (period high/low, average close, total return). Note: Claude Desktop shows this as data, not a picture — ask the assistant to describe the trend.',
+    {
+      symbol: z.string().describe('NSE symbol, e.g. RELIANCE (stock) or NIFTY 50 / BANKNIFTY (index)'),
+      from: z.string().optional().describe('Start date YYYY-MM-DD (default 90 days ago)'),
+      to: z.string().optional().describe('End date YYYY-MM-DD (default today)'),
+      interval: z.enum(['day', 'week']).optional().describe('day (default) or week aggregation'),
+    },
+    async ({ symbol, from, to, interval }) => {
+      await ensureProvider();
+
+      const toDate = to ? new Date(to) : new Date();
+      const fromDate = from
+        ? new Date(from)
+        : (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d; })();
+
+      const candles = await provider.getHistoricalData(symbol, fromDate, toDate, interval ?? 'day');
+
+      if (!candles.length) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text:
+              `No historical data returned for ${symbol}. ` +
+              'Check the symbol (use the F&O tradable list for valid names) and the date range, then try again.',
+          }],
+        };
+      }
+
+      const closes = candles.map((c) => c.close);
+      const periodHigh = Math.max(...closes);
+      const periodLow = Math.min(...closes);
+      const avgClose = closes.reduce((s, v) => s + v, 0) / closes.length;
+      const totalReturn = candles.length > 1
+        ? ((candles[candles.length - 1].close - candles[0].close) / candles[0].close) * 100
+        : 0;
+
+      const lines: string[] = [
+        `📈 ${symbol.toUpperCase()} — ${candles[0].timestamp} → ${candles[candles.length - 1].timestamp} (${(interval ?? 'day')})`,
+        `Points: ${candles.length}`,
+        `Period high: ${periodHigh.toFixed(2)} · low: ${periodLow.toFixed(2)} · avg close: ${avgClose.toFixed(2)}`,
+        `Total return: ${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`,
+        '',
+        'Date         Close       Volume',
+      ];
+
+      for (const c of candles) {
+        lines.push(
+          `${c.timestamp}  ${c.close.toFixed(2).padStart(10)}  ${c.volume.toLocaleString('en-IN')}`,
+        );
+      }
+
+      lines.push('', '↳ Values are historical EOD; ask the assistant to summarise the trend or flag key levels.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

@@ -117,6 +117,37 @@ function randomItem<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/**
+ * Aggregate daily candles into weekly candles (Monday-aligned weeks).
+ * open = first day's open, high = max, low = min, close = last day's close,
+ * volume = sum. Returns candles sorted ascending by week-start date.
+ */
+function aggregateWeekly(candles: CandleData[]): CandleData[] {
+  if (candles.length === 0) return [];
+  const sorted = [...candles].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const weeks = new Map<string, CandleData[]>();
+  for (const c of sorted) {
+    const d = new Date(c.timestamp);
+    const day = (d.getUTCDay() + 6) % 7; // 0 = Monday
+    const monday = new Date(d.getTime() - day * 86_400_000);
+    const key = monday.toISOString().slice(0, 10);
+    if (!weeks.has(key)) weeks.set(key, []);
+    weeks.get(key)!.push(c);
+  }
+  const result: CandleData[] = [];
+  for (const group of weeks.values()) {
+    result.push({
+      timestamp: group[0].timestamp,
+      open: group[0].open,
+      high: Math.max(...group.map((g) => g.high)),
+      low: Math.min(...group.map((g) => g.low)),
+      close: group[group.length - 1].close,
+      volume: group.reduce((s, g) => s + g.volume, 0),
+    });
+  }
+  return result.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
 // ── Session manager ───────────────────────────────────────────────────────
 
 interface NseSession {
@@ -570,16 +601,66 @@ export class NSEProvider extends BaseProvider {
   }
 
   async getHistoricalData(
-    _symbol: string,
-    _from: Date,
-    _to: Date,
-    _interval?: string,
+    symbol: string,
+    from: Date,
+    to: Date,
+    interval = 'day',
   ): Promise<CandleData[]> {
-    console.error(
-      '[NSE] getHistoricalData is not supported by the NSE provider — ' +
-        'NSE does not expose a public historical OHLCV API. Returning empty array.',
-    );
-    return [];
+    const upper = symbol.toUpperCase();
+
+    const rows = this.isIndex(upper)
+      ? await this.getIndexHistory(upper, from, to)
+      : await this.getEquityHistory(upper, from, to);
+
+    if (rows.length === 0) {
+      console.error(`[NSE] No historical data returned for ${upper}.`);
+      return [];
+    }
+
+    return interval === 'week' ? aggregateWeekly(rows) : rows;
+  }
+
+  private async getEquityHistory(
+    symbol: string,
+    from: Date,
+    to: Date,
+  ): Promise<CandleData[]> {
+    const path =
+      `/api/historical/cm/equity?symbol=${encodeURIComponent(symbol)}` +
+      `&from=${toQueryDate(from)}&to=${toQueryDate(to)}&series=${encodeURIComponent('["EQ"]')}`;
+    const raw = await this.nseFetch<NseEquityHistoryResponse>(path);
+
+    return (raw.data ?? []).map((r) => ({
+      timestamp: parseNSEDate(r.CH_TIMESTAMP ?? ''),
+      open: Number(r.CH_OPENING_PRICE ?? 0),
+      high: Number(r.CH_TRADE_HIGH_PRICE ?? 0),
+      low: Number(r.CH_TRADE_LOW_PRICE ?? 0),
+      close: Number(r.CH_CLOSING_PRICE ?? 0),
+      volume: Number(r.CH_TOT_TRADED_QTY ?? 0),
+    }));
+  }
+
+  private async getIndexHistory(
+    symbol: string,
+    from: Date,
+    to: Date,
+  ): Promise<CandleData[]> {
+    // Map our trading symbol to NSE's indexType name (e.g. NIFTY -> "NIFTY 50").
+    const info = getIndexByTradingSymbol(symbol) ?? getIndexBySymbol(symbol);
+    const indexType = info?.symbol ?? symbol;
+    const path =
+      `/api/historical/indicesHistory?indexType=${encodeURIComponent(indexType)}` +
+      `&from=${toQueryDate(from)}&to=${toQueryDate(to)}`;
+    const raw = await this.nseFetch<NseIndexHistoryResponse>(path);
+
+    return (raw.data ?? []).map((r) => ({
+      timestamp: parseNSEDate(r.HIST_DATE ?? ''),
+      open: Number(r.OPEN_INDEX_VAL ?? 0),
+      high: Number(r.HIGH_INDEX_VAL ?? 0),
+      low: Number(r.LOW_INDEX_VAL ?? 0),
+      close: Number(r.CLOSING_INDEX_VAL ?? 0),
+      volume: Number(r.VOLUME ?? 0),
+    }));
   }
 
   async getInstruments(_exchange?: string): Promise<Instrument[]> {
@@ -1087,6 +1168,32 @@ interface NseMover {
 
 // The endpoint returns either a bare array or an object wrapping `data`.
 type NseTopMoversResponse = NseMover[] | { data?: NseMover[] };
+
+interface NseEquityHistoryRow {
+  CH_TIMESTAMP?: string;
+  CH_OPENING_PRICE?: number | string;
+  CH_TRADE_HIGH_PRICE?: number | string;
+  CH_TRADE_LOW_PRICE?: number | string;
+  CH_CLOSING_PRICE?: number | string;
+  CH_TOT_TRADED_QTY?: number | string;
+}
+
+interface NseEquityHistoryResponse {
+  data?: NseEquityHistoryRow[];
+}
+
+interface NseIndexHistoryRow {
+  HIST_DATE?: string;
+  OPEN_INDEX_VAL?: number | string;
+  HIGH_INDEX_VAL?: number | string;
+  LOW_INDEX_VAL?: number | string;
+  CLOSING_INDEX_VAL?: number | string;
+  VOLUME?: number | string;
+}
+
+interface NseIndexHistoryResponse {
+  data?: NseIndexHistoryRow[];
+}
 
 interface NseLiveDerivativesRow {
   underlying?: string;
