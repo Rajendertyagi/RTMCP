@@ -59,6 +59,12 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 12 | **Participant OI (FII open interest)** | How much FII open interest is held long vs short across futures & options. | Options-relevant | ➕ Added | Medium |
 | 13 | **52-Week High / Low** | Lists stocks at fresh 52-week highs and lows. | Broad market | ➕ Added | Low |
 | 14 | **Market Breadth** | Advances/declines/unchanged + A/D ratio for an index. | Broad market | ➕ Added | Low |
+| 15 | **Futures Live Data (all F&O contracts)** | Live price, day change, OI, change-in-OI, and volume for every F&O futures contract — the raw feed behind most analysis. | Options-relevant | ➕ Added | Medium |
+| 16 | **Change in Open Interest (F&O)** | Same futures feed, sorted by the biggest change in OI today — shows where traders are adding/reducing positions fastest. | Options-relevant | ➕ Added | Medium |
+| 17 | **OI vs Price Matrix (buildup classification)** | Classifies each contract as Long Buildup / Short Buildup / Long Unwinding / Short Covering from price + OI direction — a sentiment read on trader positioning. | Options-relevant | ➕ Added | High |
+| 18 | **FII/DII Activity — F&O segment** | Daily FII / DII buy, sell, net (₹ crore) in the derivatives (F&O) market — distinct from the cash-market view in #11. | Options-relevant | ➕ Added | Medium |
+| 19 | **Most Active Contracts (F&O)** | The busiest F&O contracts by volume/value — index futures, stock futures, options, or all — a quick "where the action is" read. | Options-relevant | ➕ Added | Low |
+| 20 | **Lot Sizes (F&O contract lots)** | The standard lot size per F&O symbol (NIFTY=75, BANKNIFTY=30, …) from a maintained local table — no fragile endpoint needed. | Utility | ➕ Added | Low |
 
 > **✅ Already present — Market Status (item #2):** The tool already provides this in two levels:
 > - **Basic:** the `market_status` tool and `market://status` resource return open/closed (🟢/🔴).
@@ -91,6 +97,18 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 
 > **➕ Built — Market Breadth (item #14):** New `market_breadth` tool (plus `getMarketBreadth()` on the NSE provider; Zerodha throws "not supported"). Reuses the existing `/api/equity-stock-indices` feed (the same one `index_constituents` uses) and reports advances / declines / unchanged plus the advance-decline ratio for an index (default **NIFTY 50**, override with any index via `INDEX_NAME_MAP`). A/D ratio > 1 = more stocks rising than falling. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
+> **➕ Built — Futures Live Data (item #15):** New `fno_live_futures_data` tool (plus `getFuturesLiveData()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Pulls NSE's live-analysis derivatives-future feed and returns every F&O contract's last price, day change, open interest, change-in-OI, and volume, with an optional `index` filter (e.g. NIFTY, BANKNIFTY) to narrow the list. This feed is the basis for the matrix/sentiment features below. *Endpoint assumption to verify in Claude Desktop:* `/api/live-analysis/derivatives-future`. Verified: 34/34 tests pass (4 files), build + bundle succeed (921.4 kb).
+
+> **➕ Built — Change in Open Interest (item #16):** New `fno_live_change_in_oi` tool (plus `getChangeInOi()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Reuses the same futures feed and sorts contracts by the largest change-in-OI, so you see where positions are being built up or unwound fastest. Optional `index` filter. *Endpoint assumption to verify in Claude Desktop:* `/api/live-analysis/change-in-oi`. Verified: 34/34 tests pass (4 files), build + bundle succeed (921.4 kb).
+
+> **➕ Built — OI vs Price Matrix (item #17):** New `fno_live_oi_vs_price` tool (plus `getOiVsPriceMatrix()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Derives the matrix **from the #15 futures feed (no extra network call)** — for each contract it computes the OI change % and classifies it as Long Buildup (price ↑ OI ↑), Short Buildup (price ↓ OI ↑), Long Unwinding (price ↓ OI ↓), Short Covering (price ↑ OI ↓), or Neutral. A fast sentiment read on where traders are positioned. Optional `index` filter. Verified: 34/34 tests pass (4 files), build + bundle succeed (921.4 kb).
+
+> **➕ Built — FII/DII Activity — F&O segment (item #18):** New `fno_fii_stats` tool (plus `getFiiDiiFoStats()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Pulls NSE's `/api/fiidiiFO` feed — the daily FII / DII buy, sell, and net figures (₹ crore) in the **derivatives** market (distinct from the cash-market view in #11). Positive FII net in F&O = institutions adding bullish positions. *Endpoint assumption to verify in Claude Desktop:* `/api/fiidiiFO`. Verified: 34/34 tests pass (4 files), build + bundle succeed (921.4 kb).
+
+> **➕ Built — Most Active Contracts (item #19):** New `fno_combined_oi` tool (plus `getMostActiveContracts()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Pulls NSE's most-active-contracts feed, defaulting to all contracts; an optional `group` filter narrows to `indexFut` / `stockFut` / `indexOpt` / `stockOpt` / `allContract`. Shows where the volume/value action is concentrated. *Trade-off:* the public feed groups by `group` param, so we expose that directly rather than inventing a custom sort. *Endpoint assumption to verify in Claude Desktop:* `/api/live-analysis/most-active-contracts?group=allContract`. Verified: 34/34 tests pass (4 files), build + bundle succeed (921.4 kb).
+
+> **➕ Built — Lot Sizes (item #20):** New `fno_lot_sizes` tool (plus `getLotSizes()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Returns the standard F&O lot size per symbol from a **maintained local table** (`LOT_SIZES` constant, ~250 entries incl. NIFTY=75, BANKNIFTY=30) — **no network call**, so it's always fast and never rate-limited. Optional `symbol` filter; without it, returns the full sorted list. Verified: 34/34 tests pass (4 files), build + bundle succeed (921.4 kb).
+
 ---
 
 ## How a feature gets added (our process)
@@ -98,7 +116,7 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 For each "Planned" item:
 1. **Plan it** in plain words and agree on the first one to build.
 2. **Build it natively in TypeScript** inside our tool — no Python, no external library code copied.
-3. **Verify**: run the build + the 18 tests to prove nothing broke.
+3. **Verify**: run the build + the 34 tests (4 files) to prove nothing broke.
 4. **Mark it** `➕ Added` here, commit, and push to the repo.
 5. **Report back** in plain language, then pick the next one.
 

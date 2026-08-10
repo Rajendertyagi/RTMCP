@@ -1344,10 +1344,117 @@ export function createServer(): McpServer {
         '',
         result.adRatio > 1
           ? '↳ More stocks advancing than declining — breadth is constructive.'
-          : result.adRatio < 1
-            ? '↳ More stocks declining than advancing — breadth is weak.'
-            : '↳ Advances and declines are balanced.',
+          :         result.adRatio < 1
+          ? '↳ More stocks declining than advancing — breadth is weak.'
+          : '↳ Advances and declines are balanced.',
       ];
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'fno_live_futures_data',
+    'Live NSE futures data — per-contract last price, change %, open interest, and change in OI across index/stock futures. Optional index filter (e.g. NIFTY, BANKNIFTY) narrows it down. Best during market hours.',
+    {
+      index: z.string().optional().describe('Optional filter, e.g. NIFTY, BANKNIFTY (default: all futures)'),
+    },
+    async ({ index }) => {
+      await ensureProvider();
+      const result = await provider.getFuturesLiveData(index);
+      const fmt = (c: { symbol: string; expiry: string; lastPrice: number; pChange: number; openInterest: number; changeInOi: number }) =>
+        `  ${c.symbol.padEnd(12)} ${c.expiry.padEnd(12)} ₹${c.lastPrice.toFixed(2).padStart(10)} ${c.pChange >= 0 ? '+' : ''}${c.pChange.toFixed(2)}%  OI ${c.openInterest.toLocaleString('en-IN')}  ΔOI ${c.changeInOi >= 0 ? '+' : ''}${c.changeInOi.toLocaleString('en-IN')}`;
+      const lines: string[] = [`📈 Live Futures Data${result.index ? ' — ' + result.index : ''} (${result.contracts.length} contracts)`, ''];
+      if (!result.contracts.length) lines.push('  (no data — market may be closed)');
+      for (const c of result.contracts.slice(0, 50)) lines.push(fmt(c));
+      lines.push('', '↳ OI = open interest; ΔOI = change in OI vs previous day.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'fno_live_change_in_oi',
+    'Contracts ranked by change in open interest (ΔOI) — shows where fresh positions are being built or squared off. Positive ΔOI = new positions added; negative = positions closed. Optional index filter.',
+    {
+      index: z.string().optional().describe('Optional filter, e.g. NIFTY, BANKNIFTY (default: all)'),
+    },
+    async ({ index }) => {
+      await ensureProvider();
+      const result = await provider.getChangeInOi(index);
+      const fmt = (c: { symbol: string; expiry: string; openInterest: number; changeInOi: number }) =>
+        `  ${c.symbol.padEnd(12)} ${c.expiry.padEnd(12)} OI ${c.openInterest.toLocaleString('en-IN')}  ΔOI ${c.changeInOi >= 0 ? '+' : ''}${c.changeInOi.toLocaleString('en-IN')}`;
+      const lines: string[] = [`🔁 Change in Open Interest${result.index ? ' — ' + result.index : ''} (${result.contracts.length} contracts)`, ''];
+      if (!result.contracts.length) lines.push('  (no data — market may be closed)');
+      for (const c of result.contracts.slice(0, 50)) lines.push(fmt(c));
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'fno_live_oi_vs_price',
+    'OI vs Price matrix — classifies each futures contract by whether price and open interest are rising/falling together: Long Buildup (price↑ OI↑), Short Buildup (price↓ OI↑), Long Unwinding (price↓ OI↓), Short Covering (price↑ OI↓). A read on trader positioning. Optional index filter.',
+    {
+      index: z.string().optional().describe('Optional filter, e.g. NIFTY, BANKNIFTY (default: all futures)'),
+    },
+    async ({ index }) => {
+      await ensureProvider();
+      const result = await provider.getOiVsPriceMatrix(index);
+      const fmt = (i: { symbol: string; expiry: string; pChange: number; oiChangePct: number; category: string }) =>
+        `  ${i.symbol.padEnd(12)} ${i.expiry.padEnd(12)} price ${i.pChange >= 0 ? '+' : ''}${i.pChange.toFixed(2)}%  OI ${i.oiChangePct >= 0 ? '+' : ''}${i.oiChangePct.toFixed(2)}%  → ${i.category}`;
+      const lines: string[] = [`🔃 OI vs Price Matrix${result.index ? ' — ' + result.index : ''} (${result.items.length} contracts)`, ''];
+      if (!result.items.length) lines.push('  (no data — market may be closed)');
+      for (const i of result.items.slice(0, 50)) lines.push(fmt(i));
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'fno_fii_stats',
+    'FII/DII trading activity in the Futures & Options segment — buy, sell and net value (₹ crore) for FIIs and DIIs in index/stock futures & options. Complements the cash-market FII/DII view (fii_dii_activity) and the OI-positioning view (participant_oi).',
+    {},
+    async () => {
+      await ensureProvider();
+      const result = await provider.getFiiDiiFoStats();
+      const fmt = (e: { category: string; date: string; buyValue: number; sellValue: number; netValue: number }) =>
+        `  ${e.category.padEnd(6)} ${e.date.padEnd(12)} buy ₹${e.buyValue.toLocaleString('en-IN')}cr  sell ₹${e.sellValue.toLocaleString('en-IN')}cr  net ${e.netValue >= 0 ? '+' : ''}₹${e.netValue.toLocaleString('en-IN')}cr`;
+      const lines: string[] = ['🏦 FII / DII Activity (F&O)', ''];
+      if (!result.entries.length) lines.push('  (no data — market may be closed)');
+      for (const e of result.entries) lines.push(fmt(e));
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'fno_combined_oi',
+    'Most-active F&O contracts ranked by open interest / volume — where the most positions are concentrated ("combined OI"). Optional group filter: allContract (default), FUTIDX, FUTSTK, OPTIDX, OPTSTK.',
+    {
+      group: z.string().optional().describe('Group filter: allContract (default), FUTIDX, FUTSTK, OPTIDX, OPTSTK'),
+    },
+    async ({ group }) => {
+      await ensureProvider();
+      const result = await provider.getMostActiveContracts(group);
+      const fmt = (c: { symbol: string; expiry: string; openInterest: number; volume: number }) =>
+        `  ${c.symbol.padEnd(12)} ${c.expiry.padEnd(12)} OI ${c.openInterest.toLocaleString('en-IN')}  vol ${c.volume.toLocaleString('en-IN')}`;
+      const lines: string[] = [`🔥 Most Active Contracts — ${result.group} (${result.contracts.length})`, ''];
+      if (!result.contracts.length) lines.push('  (no data — market may be closed)');
+      for (const c of result.contracts.slice(0, 50)) lines.push(fmt(c));
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'fno_lot_sizes',
+    'F&O lot sizes (shares per contract) for NSE derivatives — a reference table. Pass a symbol (e.g. NIFTY, RELIANCE) for a single value, or omit it to list all known F&O lot sizes.',
+    {
+      symbol: z.string().optional().describe('Optional NSE F&O symbol, e.g. NIFTY, BANKNIFTY, RELIANCE (default: list all)'),
+    },
+    async ({ symbol }) => {
+      await ensureProvider();
+      const result = await provider.getLotSizes(symbol);
+      const fmt = (e: { symbol: string; lotSize: number }) => `  ${e.symbol.padEnd(15)} ${e.lotSize} shares/lot`;
+      const lines: string[] = [`📐 F&O Lot Sizes (${result.entries.length} entries)`, ''];
+      if (!result.entries.length) lines.push(`  (unknown symbol "${symbol}" — check spelling or list all)`);
+      for (const e of result.entries.slice(0, 100)) lines.push(fmt(e));
+      if (result.entries.length > 100) lines.push(`  … and ${result.entries.length - 100} more — pass a symbol to narrow down.`);
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     }
   );

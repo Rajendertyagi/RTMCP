@@ -45,9 +45,18 @@ import {
   Week52Item,
   Week52Result,
   MarketBreadthResult,
+  FnoContract,
+  FuturesLiveResult,
+  ChangeInOiResult,
+  OiVsPriceItem,
+  OiVsPriceMatrixResult,
+  MostActiveResult,
+  LotSizeEntry,
+  LotSizesResult,
 } from './base.provider.js';
 
 import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.js';
+import { LOT_SIZES } from '../constants/lot-sizes.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -1228,6 +1237,131 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  // ── Features #15–#20: F&O live-analysis ──────────────────────────────
+
+  /** Coerce a live-analysis response (bare array or {data:[...]}) to an array. */
+  private asArray<T>(raw: unknown): T[] {
+    if (Array.isArray(raw)) return raw as T[];
+    if (raw && typeof raw === 'object' && Array.isArray((raw as { data?: T[] }).data)) {
+      return (raw as { data: T[] }).data;
+    }
+    return [];
+  }
+
+  /** Map a raw NSE F&O row to our normalised FnoContract. */
+  private mapFnoContract(r: NseFnoRow): FnoContract {
+    const sym = r.symbol ?? r.SYMBOL ?? r.underlying ?? r.UNDERLYING ?? '';
+    const underlying = r.underlying ?? r.UNDERLYING ?? r.index ?? r.INDEX ?? undefined;
+    return {
+      symbol: String(sym),
+      expiry: r.expiryDate ?? r.EXPIRYDATE ?? r.expiry ?? '',
+      lastPrice: Number(r.ltp ?? r.lastPrice ?? r.LTP ?? r.lastTradedPrice ?? 0),
+      change: Number(r.change ?? 0),
+      pChange: Number(r.pChange ?? r.percentChange ?? r.PERCENTCHANGE ?? 0),
+      openInterest: Number(r.openInterest ?? r.oi ?? r.OI ?? 0),
+      changeInOi: Number(r.changeinOpenInterest ?? r.changeInOpenInterest ?? 0),
+      volume: Number(r.volume ?? r.totalTradedVolume ?? r.tradedVolume ?? 0),
+      underlying: underlying !== undefined ? String(underlying) : undefined,
+    };
+  }
+
+  /** Client-side filter of contracts by an index/underlying name. */
+  private filterByIndex(contracts: FnoContract[], index?: string): FnoContract[] {
+    const idx = index?.trim().toUpperCase();
+    if (!idx) return contracts;
+    return contracts.filter(
+      (c) =>
+        (c.symbol ?? '').toUpperCase().includes(idx) ||
+        (c.underlying ?? '').toUpperCase().includes(idx),
+    );
+  }
+
+  async getFuturesLiveData(index?: string): Promise<FuturesLiveResult> {
+    const raw = await this.nseFetch<NseFnoResponse>('/api/live-analysis/derivatives-future');
+    let contracts = this.asArray<NseFnoRow>(raw).map((r) => this.mapFnoContract(r));
+    contracts = this.filterByIndex(contracts, index);
+    return {
+      asOf: new Date().toISOString(),
+      index: index?.trim() || undefined,
+      contracts,
+    };
+  }
+
+  async getChangeInOi(index?: string): Promise<ChangeInOiResult> {
+    const raw = await this.nseFetch<NseFnoResponse>('/api/live-analysis/change-in-oi');
+    let contracts = this.asArray<NseFnoRow>(raw).map((r) => this.mapFnoContract(r));
+    contracts = this.filterByIndex(contracts, index);
+    contracts.sort((a, b) => b.changeInOi - a.changeInOi);
+    return {
+      asOf: new Date().toISOString(),
+      index: index?.trim() || undefined,
+      contracts,
+    };
+  }
+
+  async getOiVsPriceMatrix(index?: string): Promise<OiVsPriceMatrixResult> {
+    const live = await this.getFuturesLiveData(index);
+    const items: OiVsPriceItem[] = live.contracts.map((c) => {
+      const oiChangePct =
+        c.openInterest > 0 ? Number(((c.changeInOi / c.openInterest) * 100).toFixed(2)) : 0;
+      const priceUp = c.pChange >= 0;
+      const oiUp = c.changeInOi >= 0;
+      let category: OiVsPriceItem['category'] = 'Neutral';
+      if (priceUp && oiUp) category = 'Long Buildup';
+      else if (!priceUp && oiUp) category = 'Short Buildup';
+      else if (!priceUp && !oiUp) category = 'Long Unwinding';
+      else if (priceUp && !oiUp) category = 'Short Covering';
+      return {
+        symbol: c.symbol,
+        expiry: c.expiry,
+        lastPrice: c.lastPrice,
+        pChange: c.pChange,
+        oiChangePct,
+        category,
+      };
+    });
+    return { asOf: live.asOf, index: live.index, items };
+  }
+
+  async getFiiDiiFoStats(): Promise<FiiDiiResult> {
+    const raw = await this.nseFetch<NseFiiFoResponse>('/api/fiidiiFO');
+    const rows = this.asArray<NseFiiFoRow>(raw);
+    const entries: FiiDiiEntry[] = rows.map((r) => ({
+      category: r.category ?? '',
+      date: r.date ?? '',
+      buyValue: Number(r.buyValue ?? 0),
+      sellValue: Number(r.sellValue ?? 0),
+      netValue: Number(r.netValue ?? 0),
+    }));
+    return {
+      asOf: new Date().toISOString(),
+      date: entries[0]?.date ?? '',
+      entries,
+    };
+  }
+
+  async getMostActiveContracts(group?: string): Promise<MostActiveResult> {
+    const g = (group ?? 'allContract').trim();
+    const raw = await this.nseFetch<NseFnoResponse>(
+      `/api/live-analysis/most-active-contracts?group=${encodeURIComponent(g)}`,
+    );
+    const contracts = this.asArray<NseFnoRow>(raw).map((r) => this.mapFnoContract(r));
+    return { asOf: new Date().toISOString(), group: g, contracts };
+  }
+
+  async getLotSizes(symbol?: string): Promise<LotSizesResult> {
+    const entries: LotSizeEntry[] = symbol
+      ? (() => {
+          const s = symbol.trim().toUpperCase();
+          const size = LOT_SIZES[s];
+          return size !== undefined ? [{ symbol: s, lotSize: size }] : [];
+        })()
+      : Object.keys(LOT_SIZES)
+          .sort()
+          .map((s) => ({ symbol: s, lotSize: LOT_SIZES[s] }));
+    return { asOf: new Date().toISOString(), entries };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -1762,3 +1896,45 @@ interface NseBreadthResponse {
   declines?: number | string;
   unchanged?: number | string;
 }
+
+// ── Features #15–#20: F&O live-analysis raw shapes ──────────────────────────
+
+interface NseFnoRow {
+  symbol?: string;
+  SYMBOL?: string;
+  underlying?: string;
+  UNDERLYING?: string;
+  index?: string;
+  INDEX?: string;
+  expiryDate?: string;
+  EXPIRYDATE?: string;
+  expiry?: string;
+  ltp?: number | string;
+  LTP?: number | string;
+  lastPrice?: number | string;
+  lastTradedPrice?: number | string;
+  change?: number | string;
+  pChange?: number | string;
+  percentChange?: number | string;
+  PERCENTCHANGE?: number | string;
+  openInterest?: number | string;
+  oi?: number | string;
+  OI?: number | string;
+  changeinOpenInterest?: number | string;
+  changeInOpenInterest?: number | string;
+  volume?: number | string;
+  totalTradedVolume?: number | string;
+  tradedVolume?: number | string;
+}
+
+type NseFnoResponse = NseFnoRow[] | { data?: NseFnoRow[] };
+
+interface NseFiiFoRow {
+  date?: string;
+  category?: string; // FII / DII
+  buyValue?: number | string;
+  sellValue?: number | string;
+  netValue?: number | string;
+}
+
+type NseFiiFoResponse = NseFiiFoRow[] | { data?: NseFiiFoRow[] };

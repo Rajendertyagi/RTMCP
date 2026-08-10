@@ -389,6 +389,82 @@ export interface MarketBreadthResult {
   adRatio: number;         // advances / declines
 }
 
+// ── Feature #15: futures live data ─────────────────────────────────────────
+
+/** A single F&O futures contract with live price / OI. */
+export interface FnoContract {
+  symbol: string;          // underlying, e.g. NIFTY, RELIANCE
+  expiry: string;          // contract expiry
+  lastPrice: number;       // last traded price
+  change: number;          // absolute change
+  pChange: number;         // % change
+  openInterest: number;    // current OI
+  changeInOi: number;      // change in OI vs previous day
+  volume: number;          // traded volume
+  underlying?: string;     // for index futures, the index name
+}
+
+/** Live futures feed across index/stock futures. */
+export interface FuturesLiveResult {
+  asOf: string;
+  index?: string;          // filter applied, if any
+  contracts: FnoContract[];
+}
+
+// ── Feature #16: change in open interest ───────────────────────────────────
+
+/** Contracts ranked by change in open interest. */
+export interface ChangeInOiResult {
+  asOf: string;
+  index?: string;
+  contracts: FnoContract[]; // sorted by changeInOi descending
+}
+
+// ── Feature #17: OI vs price matrix ────────────────────────────────────────
+
+/** One contract's OI-vs-price positioning. */
+export interface OiVsPriceItem {
+  symbol: string;
+  expiry: string;
+  lastPrice: number;
+  pChange: number;         // price change %
+  oiChangePct: number;     // OI change %
+  category: 'Long Buildup' | 'Short Buildup' | 'Long Unwinding' | 'Short Covering' | 'Neutral';
+}
+
+/** OI vs price buildup classification across contracts. */
+export interface OiVsPriceMatrixResult {
+  asOf: string;
+  index?: string;
+  items: OiVsPriceItem[];
+}
+
+// ── Feature #18: FII/DII activity in F&O (futures & options) ───────────────
+// Reuses FiiDiiResult / FiiDiiEntry (cash-market shape) — see Feature #11.
+
+// ── Feature #19: most active contracts (combined OI) ───────────────────────
+
+/** Most-active F&O contracts by OI / volume. */
+export interface MostActiveResult {
+  asOf: string;
+  group: string;           // e.g. allContract, FUTIDX, FUTSTK
+  contracts: FnoContract[];
+}
+
+// ── Feature #20: F&O lot sizes ─────────────────────────────────────────────
+
+/** A single symbol's lot size. */
+export interface LotSizeEntry {
+  symbol: string;
+  lotSize: number;
+}
+
+/** F&O lot-size reference (local constant map, not a network call). */
+export interface LotSizesResult {
+  asOf: string;
+  entries: LotSizeEntry[];
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -465,6 +541,24 @@ export interface DataProvider {
   /** Get market breadth (advances/declines/unchanged) for an index. */
   getMarketBreadth(index?: string): Promise<MarketBreadthResult>;
 
+  /** Get live futures data (index/stock futures) with price & OI. */
+  getFuturesLiveData(index?: string): Promise<FuturesLiveResult>;
+
+  /** Get contracts ranked by change in open interest. */
+  getChangeInOi(index?: string): Promise<ChangeInOiResult>;
+
+  /** Get the OI-vs-price buildup matrix (long/short buildup etc.). */
+  getOiVsPriceMatrix(index?: string): Promise<OiVsPriceMatrixResult>;
+
+  /** Get FII/DII trading activity in the Futures & Options segment. */
+  getFiiDiiFoStats(): Promise<FiiDiiResult>;
+
+  /** Get the most-active F&O contracts by OI / volume. */
+  getMostActiveContracts(group?: string): Promise<MostActiveResult>;
+
+  /** Get F&O lot sizes (local reference map). */
+  getLotSizes(symbol?: string): Promise<LotSizesResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -501,6 +595,24 @@ export abstract class BaseProvider implements DataProvider {
   abstract getParticipantOi(): Promise<ParticipantOiResult>;
   abstract getWeek52HighLow(): Promise<Week52Result>;
   abstract getMarketBreadth(index?: string): Promise<MarketBreadthResult>;
+
+  /** Get live futures data (index/stock futures) with price & OI. */
+  abstract getFuturesLiveData(index?: string): Promise<FuturesLiveResult>;
+
+  /** Get contracts ranked by change in open interest. */
+  abstract getChangeInOi(index?: string): Promise<ChangeInOiResult>;
+
+  /** Get the OI-vs-price buildup matrix (long/short buildup etc.). */
+  abstract getOiVsPriceMatrix(index?: string): Promise<OiVsPriceMatrixResult>;
+
+  /** Get FII/DII trading activity in the Futures & Options segment. */
+  abstract getFiiDiiFoStats(): Promise<FiiDiiResult>;
+
+  /** Get the most-active F&O contracts by OI / volume. */
+  abstract getMostActiveContracts(group?: string): Promise<MostActiveResult>;
+
+  /** Get F&O lot sizes (local reference map). */
+  abstract getLotSizes(symbol?: string): Promise<LotSizesResult>;
 
   isReady(): boolean {
     return this._ready;

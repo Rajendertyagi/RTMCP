@@ -29,6 +29,13 @@ import {
   ParticipantOiResult,
   Week52Result,
   MarketBreadthResult,
+  FnoContract,
+  FuturesLiveResult,
+  ChangeInOiResult,
+  OiVsPriceItem,
+  OiVsPriceMatrixResult,
+  MostActiveResult,
+  LotSizesResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -684,6 +691,48 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'Market breadth is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply the /api/equity-stock-indices feed.',
+    );
+  }
+
+  async getFuturesLiveData(_index?: string): Promise<FuturesLiveResult> {
+    throw new Error(
+      'Futures live data is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/live-analysis/derivatives-future feed.',
+    );
+  }
+
+  async getChangeInOi(_index?: string): Promise<ChangeInOiResult> {
+    throw new Error(
+      'Change in OI is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/live-analysis/change-in-oi feed.',
+    );
+  }
+
+  async getOiVsPriceMatrix(_index?: string): Promise<OiVsPriceMatrixResult> {
+    throw new Error(
+      'OI vs price matrix is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the live-analysis futures feed.',
+    );
+  }
+
+  async getFiiDiiFoStats(): Promise<FiiDiiResult> {
+    throw new Error(
+      'FII/DII F&O stats are only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/fiidiiFO feed.',
+    );
+  }
+
+  async getMostActiveContracts(_group?: string): Promise<MostActiveResult> {
+    throw new Error(
+      'Most active contracts are only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/live-analysis/most-active-contracts feed.',
+    );
+  }
+
+  async getLotSizes(_symbol?: string): Promise<LotSizesResult> {
+    throw new Error(
+      'F&O lot sizes are only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the local lot-size reference.',
     );
   }
 
