@@ -11,6 +11,35 @@
  */
 
 import { z } from 'zod';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// ── .env loading (git-ignored local secrets) ──────────────────────────────
+// Populate process.env from a local `.env` file (if present) WITHOUT overriding
+// variables already set by the host (e.g. the Claude Desktop `env` block).
+// Skipped under test runners so unit tests are unaffected.
+function loadDotEnvFile(): void {
+  if (process.env['VITEST'] || process.env['NODE_ENV'] === 'test') return;
+  const envPath = join(process.cwd(), '.env');
+  if (!existsSync(envPath)) return;
+  try {
+    const text = readFileSync(envPath, 'utf8');
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let value = trimmed.slice(eq + 1).trim();
+      if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
+  } catch {
+    // ignore malformed .env
+  }
+}
+
+loadDotEnvFile();
 
 // ---------------------------------------------------------------------------
 // Schema
