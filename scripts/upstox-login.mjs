@@ -9,6 +9,7 @@
 //   4. Open the printed URL, log in, and copy the `code` from the redirect.
 //   5. Paste the code here. The token is saved to .upstox-token.json.
 //
+// The exchange uses PKCE (S256) for a more secure authorization flow.
 // Tokens last ~24h — re-run this daily (or whenever the tool reports an
 // expired token) to refresh.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { randomBytes, createHash } from 'node:crypto';
 
 const UPSTOX_BASE = 'https://api.upstox.com/v2';
 const DEFAULT_REDIRECT_URI = 'https://127.0.0.1/upstox-callback';
@@ -62,12 +64,19 @@ async function main() {
     );
   }
 
+  // PKCE (S256): the challenge goes into the login URL, the verifier into the
+  // token-exchange call. This keeps the authorization flow secure.
+  const codeVerifier = randomBytes(32).toString('base64url');
+  const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+
   const authUrl =
     `${UPSTOX_BASE}/login/authorization/dialog?` +
     new URLSearchParams({
       client_id: apiKey,
       redirect_uri: redirectUri,
       response_type: 'code',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
     }).toString();
 
   console.log('\n🔐 Step 1 — open this URL in your browser and log in to Upstox:');
@@ -100,7 +109,7 @@ async function main() {
     client_id: apiKey,
     client_secret: apiSecret,
     redirect_uri: redirectUri,
-    code_verifier: '',
+    code_verifier: codeVerifier,
   });
 
   let json;

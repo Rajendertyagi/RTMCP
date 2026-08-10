@@ -53,6 +53,7 @@ import {
 import { NSEProvider } from './nse.provider.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomBytes, createHash } from 'node:crypto';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -195,24 +196,46 @@ export class UpstoxProvider extends BaseProvider {
   // ── Static helpers (owner's one-time login) ─────────────────────────────
 
   /** Build the OAuth authorization URL the owner opens in a browser. */
-  static buildLoginUrl(apiKey: string, redirectUri: string): string {
+  static buildLoginUrl(
+    apiKey: string,
+    redirectUri: string,
+    codeChallenge?: string,
+  ): string {
     const params = new URLSearchParams({
       client_id: apiKey,
       redirect_uri: redirectUri,
       response_type: 'code',
     });
+    if (codeChallenge) {
+      params.set('code_challenge', codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
     return `https://api.upstox.com/v2/login/authorization/dialog?${params.toString()}`;
   }
 
   /**
+   * Generate a PKCE `code_verifier` / `code_challenge` pair (S256).
+   * Pass the challenge into `buildLoginUrl` and the verifier into
+   * `exchangeCodeForToken` to use a PKCE-secured authorization flow.
+   */
+  static generatePkce(): { verifier: string; challenge: string } {
+    const verifier = randomBytes(32).toString('base64url');
+    const challenge = createHash('sha256').update(verifier).digest('base64url');
+    return { verifier, challenge };
+  }
+
+  /**
    * Exchange an OAuth `code` for an access token and persist it to the
-   * git-ignored token file. Returns the token.
+   * git-ignored token file. Returns the token. When `codeVerifier` is
+   * supplied the request is PKCE-secured (must match the challenge used in
+   * `buildLoginUrl`).
    */
   static async exchangeCodeForToken(
     apiKey: string,
     apiSecret: string,
     code: string,
     redirectUri: string,
+    codeVerifier?: string,
   ): Promise<string> {
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -220,8 +243,8 @@ export class UpstoxProvider extends BaseProvider {
       client_id: apiKey,
       client_secret: apiSecret,
       redirect_uri: redirectUri,
-      code_verifier: '',
     });
+    if (codeVerifier) body.set('code_verifier', codeVerifier);
 
     const res = await fetch(`${UPSTOX_BASE}/login/authorization/token`, {
       method: 'POST',
