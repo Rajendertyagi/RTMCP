@@ -13,6 +13,12 @@ import { handleApi } from './router.js';
 import { DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_URL } from '../data/constants/dashboard.js';
 import { INDEX_HTML, APP_JS, STYLES_CSS } from './assets.js';
 import { logRequest, logError, logInfo } from '../utils/event-log.js';
+import {
+  saveUpstoxCredentials,
+  beginUpstoxAuth,
+  completeUpstoxAuth,
+  getUpstoxStatus,
+} from './upstox-auth.js';
 
 interface StaticAsset {
   body: string;
@@ -26,6 +32,110 @@ const STATIC: Record<string, StaticAsset> = {
   '/styles.css': { body: STYLES_CSS, type: 'text/css; charset=utf-8' },
 };
 
+/** Read a request body as a string, with a small size cap. */
+function readBody(req: http.IncomingMessage, limitBytes = 1_000_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    let aborted = false;
+    req.on('data', (chunk: Buffer) => {
+      if (aborted) return;
+      data += chunk.toString();
+      if (data.length > limitBytes) {
+        aborted = true;
+        req.destroy();
+        reject(new Error('Request body too large'));
+      }
+    });
+    req.on('end', () => {
+      if (!aborted) resolve(data);
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body));
+}
+
+/** Small HTML page shown in the browser tab after the OAuth redirect. */
+function callbackHtml(success: boolean, message: string): string {
+  const color = success ? '#2ecc71' : '#e74c3c';
+  const safe = message
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" />
+<title>Upstox Connection</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0f1115;color:#e6e8ec;margin:0;
+       display:flex;align-items:center;justify-content:center;height:100vh}
+  .box{background:#171a21;border:1px solid #2a3038;border-radius:12px;padding:28px 36px;max-width:460px;text-align:center}
+  h1{font-size:20px;margin:0 0 6px}
+  .msg{color:${color};font-weight:600;margin-top:10px}
+  .muted{color:#8b93a1;font-size:13px}
+</style></head>
+<body><div class="box">
+  <h1>Upstox Connection</h1>
+  <p class="msg">${safe}</p>
+  <p class="muted">You can close this tab and return to the dashboard.</p>
+</div></body></html>`;
+}
+
+async function handleUpstoxApi(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  pathname: string,
+): Promise<void> {
+  try {
+    if (pathname === '/api/upstox/status' && req.method === 'GET') {
+      return sendJson(res, 200, { ok: true, data: getUpstoxStatus() });
+    }
+    if (pathname === '/api/upstox/save' && req.method === 'POST') {
+      const body = JSON.parse((await readBody(req)) || '{}') as {
+        apiKey?: string;
+        apiSecret?: string;
+      };
+      if (!body.apiKey || !body.apiSecret) {
+        return sendJson(res, 400, { ok: false, error: 'apiKey and apiSecret are required' });
+      }
+      saveUpstoxCredentials(body.apiKey, body.apiSecret);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (pathname === '/api/upstox/connect' && req.method === 'GET') {
+      const { url } = beginUpstoxAuth();
+      return sendJson(res, 200, { ok: true, url });
+    }
+    if (pathname === '/api/upstox/exchange' && req.method === 'POST') {
+      const body = JSON.parse((await readBody(req)) || '{}') as { code?: string };
+      if (!body.code) return sendJson(res, 400, { ok: false, error: 'code is required' });
+      await completeUpstoxAuth(body.code);
+      return sendJson(res, 200, { ok: true });
+    }
+    return sendJson(res, 404, { ok: false, error: 'Unknown Upstox setup route' });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendJson(res, 500, { ok: false, error: message });
+  }
+}
+
+async function handleCallback(res: http.ServerResponse, code: string | null): Promise<void> {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  if (!code) {
+    res.end(callbackHtml(false, 'No authorization code found in the redirect URL.'));
+    return;
+  }
+  try {
+    await completeUpstoxAuth(code);
+    res.end(callbackHtml(true, 'Upstox connected successfully!'));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.end(callbackHtml(false, 'Connection failed: ' + message));
+  }
+}
+
 /** Start the local dashboard web server. Binds to localhost only. */
 export async function startDashboard(): Promise<void> {
   const provider = createDataProvider();
@@ -34,6 +144,18 @@ export async function startDashboard(): Promise<void> {
     try {
       const url = new URL(req.url || '/', DASHBOARD_URL);
       const pathname = url.pathname;
+
+      // Upstox OAuth callback (renders an HTML page, not JSON).
+      if (pathname === '/upstox/callback') {
+        await handleCallback(res, url.searchParams.get('code'));
+        return;
+      }
+
+      // Upstox web-setup API (save credentials / connect / exchange / status).
+      if (pathname.startsWith('/api/upstox/')) {
+        await handleUpstoxApi(req, res, pathname);
+        return;
+      }
 
       if (pathname.startsWith('/api/')) {
         // Log activity (skip the self-referential logs poll to avoid noise).

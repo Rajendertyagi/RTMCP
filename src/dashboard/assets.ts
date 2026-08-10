@@ -96,6 +96,14 @@ tr.cat-neutral td:first-child { border-left: 3px solid var(--muted); }
 .badge.lvl-error { box-shadow: 0 0 0 1px #ff5a5a inset; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 td.msg { white-space: pre-wrap; word-break: break-word; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; max-width: 640px; }
+.card h2 { font-size: 15px; margin: 4px 0 8px; }
+.card label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+.card .symbol { width: 100%; box-sizing: border-box; }
+.card hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+.card .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-ok { color: var(--pos); }
+.status-bad { color: var(--neg); }
 `;
 
 export const INDEX_HTML = `
@@ -127,6 +135,7 @@ export const INDEX_HTML = `
     <button class="nav-btn" data-route="week52" data-label="52-Week High/Low">52-Week High/Low</button>
     <button class="nav-btn" data-route="lot-sizes" data-label="Lot Sizes">Lot Sizes</button>
     <button class="nav-btn" data-route="logs" data-label="Logs">Logs</button>
+    <button class="nav-btn" data-route="settings/upstox" data-label="Broker Setup">Broker Setup</button>
   </nav>
   <main class="content">
     <div class="toolbar" id="toolbar">
@@ -204,10 +213,18 @@ function load(route, label, btn) {
   if (btn) setActive(btn);
   viewTitle.textContent = label;
   var isLogs = (route === 'logs');
-  setLogsToolbar(isLogs);
+  var isSettings = (route === 'settings/upstox');
+  if (!isSettings) setLogsToolbar(isLogs);
+  symbolWrap.style.display = (isLogs || isSettings) ? 'none' : '';
+  globalHint.style.display = isLogs ? '' : (isSettings ? 'none' : '');
+  if (isSettings) {
+    if (logFilter) logFilter.style.display = 'none';
+    if (logAutoWrap) logAutoWrap.style.display = 'none';
+  }
   statusLine.textContent = 'Loading...';
   output.innerHTML = '';
   if (isLogs) { startLogView(); return; }
+  if (isSettings) { renderSettings(); return; }
   var q = buildQuery();
   var url = '/api/' + route + (q ? '?' + q : '');
   fetch(url)
@@ -408,6 +425,107 @@ for (var n = 0; n < navBtns.length; n++) {
 }
 if (refreshBtn) refreshBtn.addEventListener('click', function () { load(currentRoute, currentLabel, null); });
 if (symbolInput) symbolInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') load(currentRoute, currentLabel, null); });
+
+function renderSettings() {
+  statusLine.textContent = '-';
+  globalHint.style.display = 'none';
+  output.innerHTML =
+    '<div class="card">' +
+    '<h2>Upstox Connection</h2>' +
+    '<p class="muted">Connect your Upstox account so the tool pulls option-chain and market data straight from the broker, with no NSE anti-bot blocking. Your key and secret stay in the git-ignored .env file on this computer.</p>' +
+    '<label>API Key</label>' +
+    '<input id="upKey" class="symbol" type="text" placeholder="paste your Upstox API Key" />' +
+    '<label>API Secret</label>' +
+    '<input id="upSecret" class="symbol" type="text" placeholder="paste your Upstox API Secret" />' +
+    '<div class="row" style="margin-top:10px"><button id="upSave" class="refresh">Save Credentials</button> <span id="upSaveStatus" class="status"></span></div>' +
+    '<hr/>' +
+    '<h2>Authorize</h2>' +
+    '<p class="muted">After saving, click Connect, log in to Upstox in the popup, and approve. The dashboard catches the code automatically.</p>' +
+    '<button id="upConnect" class="refresh">Connect to Upstox</button> <span id="upConnectStatus" class="status"></span>' +
+    '<div id="upLinkWrap" class="row" style="display:none;margin-top:8px"></div>' +
+    '<hr/>' +
+    '<p class="muted">Alternative: if the automatic catch does not work, copy the full redirect URL from your browser after login and paste it below.</p>' +
+    '<input id="upCodeUrl" class="symbol" type="text" placeholder="https://127.0.0.1:8787/upstox/callback?code=..." />' +
+    '<div class="row" style="margin-top:8px"><button id="upPaste" class="refresh">Use pasted URL</button> <span id="upPasteStatus" class="status"></span></div>' +
+    '<hr/>' +
+    '<h2>Status</h2>' +
+    '<div id="upStatus"></div>' +
+    '</div>';
+  wireSettings();
+  refreshUpstoxStatus();
+}
+
+function wireSettings() {
+  var saveBtn = document.getElementById('upSave');
+  var connectBtn = document.getElementById('upConnect');
+  var pasteBtn = document.getElementById('upPaste');
+  if (saveBtn) saveBtn.addEventListener('click', function () {
+    var k = document.getElementById('upKey').value.trim();
+    var s = document.getElementById('upSecret').value.trim();
+    var st = document.getElementById('upSaveStatus');
+    if (!k || !s) { st.textContent = 'Enter both key and secret.'; st.className = 'status status-bad'; return; }
+    fetch('/api/upstox/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey: k, apiSecret: s }) })
+      .then(function (r) { return r.json(); })
+      .then(function (b) { st.textContent = b.ok ? 'Saved.' : ('Error: ' + (b.error || '')); st.className = 'status ' + (b.ok ? 'status-ok' : 'status-bad'); })
+      .catch(function (e) { st.textContent = 'Error: ' + e.message; st.className = 'status status-bad'; });
+  });
+  if (connectBtn) connectBtn.addEventListener('click', function () {
+    var st = document.getElementById('upConnectStatus');
+    fetch('/api/upstox/connect')
+      .then(function (r) { return r.json(); })
+      .then(function (b) {
+        if (!b.ok) { st.textContent = 'Error: ' + (b.error || ''); st.className = 'status status-bad'; return; }
+        st.textContent = 'Opened login.'; st.className = 'status status-ok';
+        var wrap = document.getElementById('upLinkWrap');
+        wrap.innerHTML = '<a class="refresh" href="' + b.url + '" target="_blank" rel="noopener">Open Upstox login</a>';
+        wrap.style.display = '';
+        window.open(b.url, '_blank');
+        pollUpstoxStatus();
+      })
+      .catch(function (e) { st.textContent = 'Error: ' + e.message; st.className = 'status status-bad'; });
+  });
+  if (pasteBtn) pasteBtn.addEventListener('click', function () {
+    var url = document.getElementById('upCodeUrl').value.trim();
+    var st = document.getElementById('upPasteStatus');
+    var m = url.match(/[?&]code=([^&]+)/);
+    var code = m ? decodeURIComponent(m[1]) : url;
+    if (!code) { st.textContent = 'No code found in that URL.'; st.className = 'status status-bad'; return; }
+    fetch('/api/upstox/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) })
+      .then(function (r) { return r.json(); })
+      .then(function (b) { st.textContent = b.ok ? 'Connected.' : ('Error: ' + (b.error || '')); st.className = 'status ' + (b.ok ? 'status-ok' : 'status-bad'); refreshUpstoxStatus(); })
+      .catch(function (e) { st.textContent = 'Error: ' + e.message; st.className = 'status status-bad'; });
+  });
+}
+
+var upPoll = null;
+function pollUpstoxStatus() {
+  if (upPoll) clearInterval(upPoll);
+  upPoll = setInterval(function () {
+    if (document.hidden) return;
+    refreshUpstoxStatus(function (connected) { if (connected && upPoll) { clearInterval(upPoll); upPoll = null; } });
+  }, 2000);
+}
+
+function refreshUpstoxStatus(done) {
+  fetch('/api/upstox/status')
+    .then(function (r) { return r.json(); })
+    .then(function (b) {
+      if (!b.ok) { setStatusText('Error: ' + (b.error || '')); if (done) done(false); return; }
+      var d = b.data;
+      var html = '<p>Configured: <b class="' + (d.configured ? 'status-ok' : 'status-bad') + '">' + (d.configured ? 'Yes' : 'No') + '</b></p>' +
+        '<p>Connected: <b class="' + (d.connected ? 'status-ok' : 'status-bad') + '">' + (d.connected ? 'Yes' : 'No') + '</b></p>' +
+        '<p class="muted">Redirect URI: ' + d.redirectUri + '</p>';
+      var el = document.getElementById('upStatus');
+      if (el) el.innerHTML = html;
+      if (done) done(d.connected);
+    })
+    .catch(function (e) { setStatusText('Error: ' + e.message); if (done) done(false); });
+}
+
+function setStatusText(t) {
+  var el = document.getElementById('upStatus');
+  if (el) el.textContent = t;
+}
 
 load('indices/live', 'Live Indices', document.querySelector('.nav-btn'));
 `;
