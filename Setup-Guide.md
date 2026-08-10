@@ -73,6 +73,8 @@ The project now **automatically builds a single `indian-option-mcp.exe` file** w
 ```
 Note: there is **no `node` and no `args`** here — the `.exe` *is* the whole program.
 
+**✅ Verified:** the automated build was confirmed working (run on 2026-08-10). The `.exe` compiled cleanly and the uploaded file is about **39 MB**. If your downloaded zip unzips to a file near that size, you're good to go.
+
 ## Keeping it updated
 - **Option A:** restart Claude Desktop — it fetches the latest automatically.
 - **Option B:** in the project folder run `git pull` then `npm install && npm run build`.
