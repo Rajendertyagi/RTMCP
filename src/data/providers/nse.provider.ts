@@ -20,6 +20,8 @@ import {
   Instrument,
   VixPoint,
   IndiaVixResult,
+  PreMarketDerivative,
+  PreMarketDerivativesResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -662,6 +664,52 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  async getPreMarketDerivatives(
+    key: 'FUTIDX' | 'FUTSTK' = 'FUTIDX',
+  ): Promise<PreMarketDerivativesResult> {
+    const raw = await this.nseFetch<NsePreOpenFnoResponse>(
+      `/api/market-data-pre-open-fno?key=${key}`,
+    );
+    const rows = raw.data ?? [];
+
+    const items: PreMarketDerivative[] = rows.map((r) => {
+      const m = r.metadata ?? {};
+      const pre = r.detail?.preOpenMarket ?? {};
+      return {
+        symbol: m.symbol ?? '',
+        expiryDate: parseNSEDate(m.expiryDate ?? ''),
+        previousClose: m.previousClose ?? 0,
+        iep: m.iep ?? 0,
+        change: m.change ?? 0,
+        pChange: m.pChange ?? 0,
+        lastPrice: m.lastPrice ?? 0,
+        finalQuantity: m.finalQuantity ?? 0,
+        totalTurnover: m.totalTurnover ?? 0,
+        totalBuyQuantity: pre.totalBuyQuantity ?? 0,
+        totalSellQuantity: pre.totalSellQuantity ?? 0,
+      };
+    });
+
+    // Breadth: how many contracts are trading above vs below their previous close.
+    let advancing = 0;
+    let declining = 0;
+    for (const it of items) {
+      if (it.change > 0) advancing++;
+      else if (it.change < 0) declining++;
+    }
+
+    return {
+      key,
+      asOf: raw.timestamp ?? new Date().toISOString(),
+      sentiment: {
+        advancing,
+        declining,
+        breadth: advancing - declining,
+      },
+      items,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -908,6 +956,37 @@ interface NseVixHistoryRow {
 
 interface NseVixHistoryResponse {
   data?: NseVixHistoryRow[];
+}
+
+interface NsePreOpenFnoMetadata {
+  symbol?: string;
+  expiryDate?: string;
+  previousClose?: number;
+  iep?: number;
+  change?: number;
+  pChange?: number;
+  lastPrice?: number;
+  finalQuantity?: number;
+  totalTurnover?: number;
+}
+
+interface NsePreOpenFnoPreMarket {
+  totalBuyQuantity?: number;
+  totalSellQuantity?: number;
+  atoBuyQty?: number;
+  atoSellQty?: number;
+}
+
+interface NsePreOpenFnoRow {
+  metadata?: NsePreOpenFnoMetadata;
+  detail?: {
+    preOpenMarket?: NsePreOpenFnoPreMarket;
+  };
+}
+
+interface NsePreOpenFnoResponse {
+  data?: NsePreOpenFnoRow[];
+  timestamp?: string;
 }
 
 interface NseLiveDerivativesRow {

@@ -17,6 +17,7 @@ import {
   CandleData,
   Instrument,
   IndiaVixResult,
+  PreMarketDerivativesResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -558,6 +559,17 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'India VIX is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply VIX data — switch to the NSE provider to use this feature.',
+    );
+  }
+
+  async getPreMarketDerivatives(
+    _key?: 'FUTIDX' | 'FUTSTK',
+  ): Promise<PreMarketDerivativesResult> {
+    // The Zerodha provider does not expose the pre-open F&O sentiment feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Pre-market derivatives sentiment is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply pre-open F&O data.',
     );
   }
 

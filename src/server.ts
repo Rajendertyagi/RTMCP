@@ -866,6 +866,51 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'pre_market_sentiment',
+    'Early read on how the trading day may open, from pre-market (pre-open) futures activity. Shows the indicative equilibrium price (IEP) vs previous close for index/stock futures, plus an advancing/declining breadth count — a quick bullish/bearish bias gauge before the market opens. Only meaningful during the pre-open window (≈9:00–9:15 AM IST); outside that it is usually empty or stale.',
+    {
+      segment: z.enum(['FUTIDX', 'FUTSTK']).optional()
+        .describe("FUTIDX = index futures (NIFTY, BANKNIFTY, …) [default]; FUTSTK = stock futures."),
+    },
+    async ({ segment }) => {
+      await ensureProvider();
+      const result = await provider.getPreMarketDerivatives(segment);
+
+      if (!result.items.length) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text:
+              'No pre-market F&O data available right now. This feed is only populated during the pre-open window (≈9:00–9:15 AM IST) on trading days. Try again then, or after the market opens.',
+          }],
+        };
+      }
+
+      const s = result.sentiment;
+      const bias = s.breadth > 0 ? '🟢 Bullish bias' : s.breadth < 0 ? '🔴 Bearish bias' : '⚪ Neutral';
+      const lines: string[] = [
+        `🌅 Pre-market F&O sentiment (${result.key}) — as of ${result.asOf}`,
+        `${bias}  ·  Advancing ${s.advancing} / Declining ${s.declining}  ·  Breadth ${s.breadth >= 0 ? '+' : ''}${s.breadth}`,
+        '',
+        'Top movers (by % change):',
+      ];
+
+      const movers = [...result.items]
+        .sort((a, b) => b.pChange - a.pChange)
+        .slice(0, 10);
+      for (const it of movers) {
+        const arrow = it.change >= 0 ? '▲' : '▼';
+        lines.push(
+          `  ${arrow} ${it.symbol.padEnd(12)} IEP ${it.iep.toFixed(2)}  ${it.pChange >= 0 ? '+' : ''}${it.pChange.toFixed(2)}%`,
+        );
+      }
+
+      lines.push('', '↳ IEP = indicative equilibrium price (where the auction is balancing)');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

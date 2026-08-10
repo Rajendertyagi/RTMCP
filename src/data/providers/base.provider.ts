@@ -115,6 +115,33 @@ export interface IndiaVixResult {
   history: VixPoint[];
 }
 
+/** A single pre-market (pre-open) derivative contract sentiment row. */
+export interface PreMarketDerivative {
+  symbol: string;
+  expiryDate: string;      // ISO-8601 date
+  previousClose: number;
+  iep: number;             // indicative equilibrium price
+  change: number;
+  pChange: number;
+  lastPrice: number;
+  finalQuantity: number;
+  totalTurnover: number;
+  totalBuyQuantity: number;
+  totalSellQuantity: number;
+}
+
+/** Pre-market derivatives sentiment snapshot. */
+export interface PreMarketDerivativesResult {
+  key: 'FUTIDX' | 'FUTSTK';
+  asOf: string;            // timestamp of the snapshot
+  sentiment: {
+    advancing: number;     // count of contracts trading above prev close
+    declining: number;     // count trading below prev close
+    breadth: number;       // advancing - declining (positive = bullish bias)
+  };
+  items: PreMarketDerivative[];
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -155,6 +182,9 @@ export interface DataProvider {
   /** Get India VIX (volatility index) — current reading + recent history */
   getIndiaVix(days?: number): Promise<IndiaVixResult>;
 
+  /** Get pre-market (pre-open) derivatives sentiment for index/stock futures */
+  getPreMarketDerivatives(key?: 'FUTIDX' | 'FUTSTK'): Promise<PreMarketDerivativesResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -178,6 +208,7 @@ export abstract class BaseProvider implements DataProvider {
   abstract getInstruments(exchange?: string): Promise<Instrument[]>;
   abstract getMarketStatus(): Promise<MarketStatus>;
   abstract getIndiaVix(days?: number): Promise<IndiaVixResult>;
+  abstract getPreMarketDerivatives(key?: 'FUTIDX' | 'FUTSTK'): Promise<PreMarketDerivativesResult>;
 
   isReady(): boolean {
     return this._ready;
