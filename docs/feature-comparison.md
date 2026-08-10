@@ -52,9 +52,9 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 5 | **Top movers (gainers / losers)** | Which stocks or indices moved the most today — a quick market feel. | Broad market | ➕ Added | Low |
 | 6 | **Live indices / Nifty 50 & 500 lists** | Current values of major indices and their constituent lists. | Broad market | ➕ Added | Low |
 | 7 | **IPO tracker** | Current IPOs, pre-open IPOs, and a summary view. | Broad market | ➕ Added | Low |
-| 8 | **Corporate actions / announcements** | Dividends, bonuses, board meetings, etc. | Broad market | 📋 Planned | Low |
+| 8 | **Corporate actions / announcements** | Dividends, bonuses, board meetings, etc. | Broad market | ➕ Added | Low |
 | 9 | **Stock & index charts** | Historical price charts for a symbol. | Broad market | ➕ Added | Low |
-| 10 | **Block deals / insider trading** | Large trades and insider activity feed. | Broad market | 📋 Planned | Low |
+| 10 | **Block deals / insider trading** | Large trades and insider activity feed. | Broad market | ➕ Added | Low |
 
 > **✅ Already present — Market Status (item #2):** The tool already provides this in two levels:
 > - **Basic:** the `market_status` tool and `market://status` resource return open/closed (🟢/🔴).
@@ -74,6 +74,10 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 > **➕ Built — Live indices / Nifty 50 & 500 lists (item #6):** Two new tools. `live_indices` shows the current value, day change, and % change of all major NSE indices (reuses the existing `/api/allIndices` feed the NSE provider already fetched for quotes). `index_constituents` lists the stocks inside a named index — defaults to **NIFTY 50**, pass `NIFTY 500` / `NIFTY BANK` / `NIFTY IT` / any sectoral index — pulling each constituent's price, % change, and volume from `/api/equity-stock-indices`. A small `INDEX_NAME_MAP` resolves the many ways a user might name an index to the exact NSE string (avoids guessing/hardcoding in the endpoint call). Provider methods `getLiveIndices()` / `getIndexConstituents()` live on the NSE provider; Zerodha throws "not supported". Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 > **➕ Built — IPO tracker (item #7):** New `ipo_tracker` tool (plus `getIpoTracker()` on the NSE provider; Zerodha throws "not supported"). One call returns three NSE feeds: **currently open IPOs** (`/api/ipo-current-issue`), **pre-open / listing-day auction IPOs** with indicative equilibrium price (`/api/special-preopen-listing`), and a **recently-listed summary** with listing-day gain/loss (`/api/NextApi/apiClient?functionName=getIPOTrackerSummary`). Shows open issues you can still apply to, today's listings, and how recent IPOs performed on day 1. Only populated during/around issue windows. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — Corporate actions / announcements (item #8):** New `corporate_actions` tool (plus `getCorporateActions()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's `/api/corporates-corporateActions` feed (the same source NSE uses for its corporate-actions page): dividends, bonuses, stock splits, buybacks, etc. Optional `symbol` filter (e.g. RELIANCE) and `fromDate`/`toDate` window (default: yesterday → ~90 days ahead, held in a named `CORP_ACTION_LOOKAHEAD_DAYS` constant rather than an inline magic number). Shows purpose + ex-date + record date. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — Block deals (item #10):** New `block_deals` tool (plus `getBlockDeals()` on the NSE provider; Zerodha throws "not supported"). Pulls the live block-deal feed `/api/block-deal` — large negotiated trades (₹10 crore+) reported in the MORNING / AFTERNOON windows — showing symbol, last price, day change %, and total volume/value. A flurry of block deals can signal institutional activity. Only populated during market hours. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 ---
 

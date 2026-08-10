@@ -1169,6 +1169,80 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'corporate_actions',
+    'Corporate actions watch — dividends, bonuses, stock splits, buybacks and similar announcements from NSE. Pass a stock symbol (e.g. RELIANCE) to see that company\'s upcoming actions, or leave it blank to see everything in the window. Returns the purpose (dividend/bonus/split/…), ex-date, and record date for each. Useful before an earnings/action date that can move a stock or its options.',
+    {
+      symbol: z.string().optional()
+        .describe('NSE equity symbol, e.g. RELIANCE, INFY. Omit to see all actions in the window.'),
+      fromDate: z.string().optional()
+        .describe('Start date YYYY-MM-DD (default: yesterday).'),
+      toDate: z.string().optional()
+        .describe('End date YYYY-MM-DD (default: ~90 days ahead).'),
+    },
+    async ({ symbol, fromDate, toDate }) => {
+      await ensureProvider();
+      const result = await provider.getCorporateActions(
+        symbol ?? undefined,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+      );
+
+      const lines: string[] = [
+        `🏛️ Corporate Actions — ${result.fromDate} → ${result.toDate}`,
+        `(${result.actions.length} found)`,
+        '',
+      ];
+
+      if (!result.actions.length) {
+        lines.push('No corporate actions in this window. Try a wider date range or a specific symbol.');
+      } else {
+        for (const a of result.actions.slice(0, 30)) {
+          const purpose = a.purpose || '(unspecified)';
+          const ex = a.exDate ? ` · ex ${a.exDate}` : '';
+          lines.push(`  ${a.symbol.padEnd(12)} ${purpose}${ex}`);
+        }
+        if (result.actions.length > 30) {
+          lines.push('', `… and ${result.actions.length - 30} more.`);
+        }
+      }
+
+      lines.push('', '↳ ex-date = first day the stock trades without the action (price adjusts then).');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
+    'block_deals',
+    'Block-deal watch — large negotiated trades (₹10 crore+) reported to the exchange in the MORNING or AFTERNOON window. Shows the stock, its last price, day change %, and the total volume/value of the block. A flurry of block deals in a stock can signal institutional activity. Only meaningful during market hours.',
+    {},
+    async () => {
+      await ensureProvider();
+      const result = await provider.getBlockDeals();
+
+      if (!result.deals.length) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text:
+              'No block deals reported right now. This feed is populated during market hours ' +
+              'in the MORNING and AFTERNOON windows. Try again when the market is open.',
+          }],
+        };
+      }
+
+      const lines: string[] = [`🧱 Block Deals (${result.deals.length})`, ''];
+      const fmt = (d: { symbol: string; lastPrice: number; pChange: number; totalTradedVolume: number; totalTradedValue: number; session: string }) =>
+        `  [${d.session.padEnd(9)}] ${d.symbol.padEnd(12)} ₹${d.lastPrice.toFixed(2).padStart(10)} ${d.pChange >= 0 ? '+' : ''}${d.pChange.toFixed(2)}%  vol ${d.totalTradedVolume.toLocaleString('en-IN')} · ₹${d.totalTradedValue.toLocaleString('en-IN')}`;
+
+      for (const d of result.deals.slice(0, 30)) lines.push(fmt(d));
+      if (result.deals.length > 30) lines.push('', `… and ${result.deals.length - 30} more.`);
+
+      lines.push('', '↳ Block deals are large trades done at a negotiated price, reported separately from normal trades.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

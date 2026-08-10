@@ -34,6 +34,10 @@ import {
   IpoPreOpen,
   IpoTrackerItem,
   IpoTrackerResult,
+  CorporateAction,
+  CorporateActionsResult,
+  BlockDeal,
+  BlockDealsResult,
 } from './base.provider.js';
 
 import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.js';
@@ -1034,6 +1038,87 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  // ── Feature #8: corporate actions ────────────────────────────────────────
+
+  /**
+   * Default look-ahead window (days) for corporate actions when no range is
+   * supplied. NSE itself defaults to ~90 days; we mirror that as a named
+   * constant rather than an inline magic number.
+   */
+  private static readonly CORP_ACTION_LOOKAHEAD_DAYS = 90;
+
+  async getCorporateActions(
+    symbol?: string,
+    fromDate?: string,
+    toDate?: string,
+  ): Promise<CorporateActionsResult> {
+    // Build the DD-MM-YYYY window NSE expects. Default: yesterday → +90 days.
+    const to = toDate ? new Date(toDate) : new Date();
+    const from = fromDate
+      ? new Date(fromDate)
+      : (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - 1);
+          return d;
+        })();
+    if (!toDate) to.setDate(to.getDate() + NSEProvider.CORP_ACTION_LOOKAHEAD_DAYS);
+
+    const params = new URLSearchParams({ index: 'equities' });
+    params.set('from_date', toQueryDate(from));
+    params.set('to_date', toQueryDate(to));
+    if (symbol) params.set('symbol', symbol.toUpperCase());
+
+    const raw = await this.nseFetch<NseCorporateActionsResponse>(
+      `/api/corporates-corporateActions?${params.toString()}`,
+    );
+    const rows = raw.data ?? [];
+
+    const actions: CorporateAction[] = rows.map((r) => ({
+      symbol: r.symbol ?? '',
+      company: r.comp ?? '',
+      series: r.series ?? '',
+      purpose: r.subject ?? '',
+      faceValue: Number(r.faceVal ?? 0),
+      exDate: parseNSEDate(r.exDate ?? ''),
+      recordDate: parseNSEDate(r.recDate ?? ''),
+      bookClosureStart: parseNSEDate(r.bcStartDate ?? ''),
+      bookClosureEnd: parseNSEDate(r.bcEndDate ?? ''),
+    }));
+
+    return {
+      asOf: new Date().toISOString(),
+      fromDate: parseNSEDate(toQueryDate(from)),
+      toDate: parseNSEDate(toQueryDate(to)),
+      actions,
+    };
+  }
+
+  // ── Feature #10: block deals ─────────────────────────────────────────────
+
+  async getBlockDeals(): Promise<BlockDealsResult> {
+    const raw = await this.nseFetch<NseBlockDealResponse>('/api/block-deal');
+    const rows = raw.data ?? [];
+
+    const deals: BlockDeal[] = rows.map((r) => ({
+      session: r.session ?? '',
+      symbol: r.symbol ?? '',
+      series: r.series ?? '',
+      open: Number(r.open ?? 0),
+      dayHigh: Number(r.dayHigh ?? 0),
+      dayLow: Number(r.dayLow ?? 0),
+      lastPrice: Number(r.lastPrice ?? 0),
+      previousClose: Number(r.previousClose ?? 0),
+      pChange: Number(r.pchange ?? 0),
+      totalTradedVolume: Number(r.totalTradedVolume ?? 0),
+      totalTradedValue: Number(r.totalTradedValue ?? 0),
+    }));
+
+    return {
+      asOf: new Date().toISOString(),
+      deals,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -1477,4 +1562,42 @@ interface NseIpoTrackerRow {
 
 interface NseIpoTrackerResponse {
   data?: NseIpoTrackerRow[];
+}
+
+// ── Feature #8: corporate actions ────────────────────────────────────────────
+
+interface NseCorporateActionRow {
+  symbol?: string;
+  comp?: string;
+  series?: string;
+  subject?: string;        // purpose: DIVIDEND / BONUS / STOCK SPLIT / BUYBACK …
+  faceVal?: number | string;
+  exDate?: string;
+  recDate?: string;
+  bcStartDate?: string;
+  bcEndDate?: string;
+}
+
+interface NseCorporateActionsResponse {
+  data?: NseCorporateActionRow[];
+}
+
+// ── Feature #10: block deals ─────────────────────────────────────────────────
+
+interface NseBlockDealRow {
+  session?: string;
+  symbol?: string;
+  series?: string;
+  open?: number | string;
+  dayHigh?: number | string;
+  dayLow?: number | string;
+  lastPrice?: number | string;
+  previousClose?: number | string;
+  pchange?: number | string;
+  totalTradedVolume?: number | string;
+  totalTradedValue?: number | string;
+}
+
+interface NseBlockDealResponse {
+  data?: NseBlockDealRow[];
 }

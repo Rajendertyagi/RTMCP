@@ -274,6 +274,52 @@ export interface IpoTrackerResult {
   summary: IpoTrackerItem[];
 }
 
+// ── Feature #8: corporate actions / announcements ──────────────────────────
+
+/** A single corporate action (dividend, bonus, split, buyback, …). */
+export interface CorporateAction {
+  symbol: string;
+  company: string;
+  series: string;
+  purpose: string;         // e.g. DIVIDEND, BONUS, STOCK SPLIT, BUYBACK
+  faceValue: number;
+  exDate: string;          // ISO date (ex-dividend date)
+  recordDate: string;      // ISO date
+  bookClosureStart: string; // ISO date
+  bookClosureEnd: string;   // ISO date
+}
+
+/** Corporate actions in a date window (optionally for one symbol). */
+export interface CorporateActionsResult {
+  asOf: string;
+  fromDate: string;
+  toDate: string;
+  actions: CorporateAction[];
+}
+
+// ── Feature #10: block deals ────────────────────────────────────────────────
+
+/** A single block deal (large negotiated trade). */
+export interface BlockDeal {
+  session: string;         // MORNING / AFTERNOON
+  symbol: string;
+  series: string;
+  open: number;
+  dayHigh: number;
+  dayLow: number;
+  lastPrice: number;
+  previousClose: number;
+  pChange: number;
+  totalTradedVolume: number;
+  totalTradedValue: number; // ₹
+}
+
+/** Live block-deal feed for the session. */
+export interface BlockDealsResult {
+  asOf: string;
+  deals: BlockDeal[];
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -332,6 +378,12 @@ export interface DataProvider {
   /** Get the IPO tracker: current IPOs, pre-open IPOs, and a summary */
   getIpoTracker(): Promise<IpoTrackerResult>;
 
+  /** Get corporate actions (dividends, bonus, splits, buybacks) in a window */
+  getCorporateActions(symbol?: string, fromDate?: string, toDate?: string): Promise<CorporateActionsResult>;
+
+  /** Get the live block-deal feed for the current session */
+  getBlockDeals(): Promise<BlockDealsResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -361,6 +413,8 @@ export abstract class BaseProvider implements DataProvider {
   abstract getLiveIndices(): Promise<LiveIndicesResult>;
   abstract getIndexConstituents(index: string): Promise<IndexConstituentsResult>;
   abstract getIpoTracker(): Promise<IpoTrackerResult>;
+  abstract getCorporateActions(symbol?: string, fromDate?: string, toDate?: string): Promise<CorporateActionsResult>;
+  abstract getBlockDeals(): Promise<BlockDealsResult>;
 
   isReady(): boolean {
     return this._ready;

@@ -23,6 +23,8 @@ import {
   LiveIndicesResult,
   IndexConstituentsResult,
   IpoTrackerResult,
+  CorporateActionsResult,
+  BlockDealsResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -620,6 +622,28 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'IPO tracker is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply the IPO issue / pre-open / tracker feeds.',
+    );
+  }
+
+  async getCorporateActions(
+    _symbol?: string,
+    _fromDate?: string,
+    _toDate?: string,
+  ): Promise<CorporateActionsResult> {
+    // The Zerodha provider does not expose the NSE corporate-actions feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Corporate actions is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/corporates-corporateActions feed.',
+    );
+  }
+
+  async getBlockDeals(): Promise<BlockDealsResult> {
+    // The Zerodha provider does not expose the NSE block-deal feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Block deals is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the /api/block-deal feed.',
     );
   }
 
