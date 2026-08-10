@@ -324,6 +324,22 @@ export class NSEProvider extends BaseProvider {
     return [...map.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
   }
 
+  /**
+   * NSE's stricter APIs (option-chain especially) only accept requests whose
+   * Referer matches the page that actually serves them — sending the bare home
+   * page Referer gets a 404 from the anti-bot. Map the option-chain API paths
+   * to their originating pages; everything else keeps the home page Referer.
+   */
+  private refererForPath(path: string): string {
+    if (path.startsWith('/api/option-chain-indices')) {
+      return `${NSE_BASE}/option-chain/indices`;
+    }
+    if (path.startsWith('/api/option-chain-equities')) {
+      return `${NSE_BASE}/option-chain/equities`;
+    }
+    return `${NSE_BASE}/`;
+  }
+
   private isSessionStale(): boolean {
     if (!this.session) return true;
     return Date.now() - this.session.refreshedAt > SESSION_REFRESH_MS;
@@ -379,7 +395,7 @@ export class NSEProvider extends BaseProvider {
             Accept: 'application/json, text/javascript, */*; q=0.01',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            Referer: `${NSE_BASE}/`,
+            Referer: this.refererForPath(path),
             'X-Requested-With': 'XMLHttpRequest',
             Cookie: this.session?.cookies ?? '',
           },
