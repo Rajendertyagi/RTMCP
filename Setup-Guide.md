@@ -75,6 +75,23 @@ Note: there is **no `node` and no `args`** here — the `.exe` *is* the whole pr
 
 **✅ Verified:** the automated build was confirmed working (run on 2026-08-10). The `.exe` compiled cleanly and the uploaded file is about **39 MB**. If your downloaded zip unzips to a file near that size, you're good to go.
 
+## Running the dashboard (see the data in a web page) — optional
+If you'd rather look at the live market data in a simple web page instead of only inside Claude, the tool can open a **local dashboard** on your own computer. Nothing is sent to the internet — it only runs on your machine (`http://localhost:8787`). It reuses the exact same data feeds the tool already uses.
+
+**With the .exe (Windows, no Node needed):**
+1. Start the tool with the dashboard switch:
+   `indian-option-mcp.exe --dashboard`
+2. It opens a web page in your default browser automatically. If it doesn't, just visit `http://localhost:8787`.
+3. You'll see a list of views on the left (live indices, F&O futures, OI vs price matrix, FII/DII, market breadth, IPO tracker, and more). Click any one to see the live data.
+
+**With Node (Option B):**
+```bash
+npm run dashboard
+```
+Then open `http://localhost:8787`.
+
+To stop it, close the terminal window (or press `Ctrl+C`). This is a **separate mode** from Claude — when you run `--dashboard` you get the web page; when Claude runs the tool normally it feeds Claude as before. Use whichever you prefer. Like the rest of the tool, the dashboard needs internet access to fetch live market data from NSE.
+
 ## Keeping it updated
 - **Option A:** restart Claude Desktop — it fetches the latest automatically.
 - **Option B:** in the project folder run `git pull` then `npm install && npm run build`.

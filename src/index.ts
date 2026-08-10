@@ -9,6 +9,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createServer } from './server.js';
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const isDashboard = args.includes('--dashboard') || args.includes('--web');
+  if (isDashboard) {
+    const { startDashboard } = await import('./dashboard/server.js');
+    await startDashboard();
+    return;
+  }
+
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
