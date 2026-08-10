@@ -48,7 +48,7 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 1 | **India VIX (volatility index)** | The "fear gauge" — how jumpy the market expects to be. Shows current VIX + recent history. | Options-relevant | ➕ Added | High |
 | 2 | **Market open / closed + holidays** | Tells you if the market is open *right now*, the next trading day, and upcoming holidays — so you never fetch data when there's none. | Utility | ✅ Native | — |
 | 3 | **Pre-market derivatives sentiment** | Early read on how the day might open, from derivative activity. | Options-relevant | ➕ Added | Medium |
-| 4 | **F&O tradable list** | A list of stocks & indices that actually have options/futures, so you can pick what to analyze. | Utility | 📋 Planned | Medium |
+| 4 | **F&O tradable list** | A list of stocks & indices that actually have options/futures, so you can pick what to analyze. | Utility | ➕ Added | Medium |
 | 5 | **Top movers (gainers / losers)** | Which stocks or indices moved the most today — a quick market feel. | Broad market | 📋 Planned | Low |
 | 6 | **Live indices / Nifty 50 & 500 lists** | Current values of major indices and their constituent lists. | Broad market | 📋 Planned | Low |
 | 7 | **IPO tracker** | Current IPOs, pre-open IPOs, and a summary view. | Broad market | 📋 Planned | Low |
@@ -64,6 +64,8 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 > **➕ Built — India VIX (item #1):** New `india_vix` tool (plus a `getIndiaVix()` provider method on the free NSE provider; the optional Zerodha provider throws a clear "not supported" message). It pulls the latest reading + a recent history window (default 30 days, up to 365) from NSE's public VIX history endpoint and shows the current level with its day change. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 > **➕ Built — Pre-market derivatives sentiment (item #3):** New `pre_market_sentiment` tool (plus `getPreMarketDerivatives()` on the NSE provider; Zerodha throws "not supported"). Pulls the pre-open F&O auction feed (`FUTIDX` index futures by default, or `FUTSTK` stock futures) and shows each contract's indicative equilibrium price (IEP) vs previous close, the top movers, and an advancing/declining breadth count for a quick bullish/bearish bias. Only populated during the pre-open window (≈9:00–9:15 AM IST). Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — F&O tradable list (item #4):** New `fo_tradable_list` tool (plus `getFoList()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's underlying-information feed and returns the full list of F&O-eligible indices + stocks (with counts), so you can pick a valid underlying before running option-chain/IV/strategy analysis. Optional `type` filter: ALL / STOCK / INDEX. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 ---
 

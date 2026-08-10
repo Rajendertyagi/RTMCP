@@ -18,6 +18,7 @@ import {
   Instrument,
   IndiaVixResult,
   PreMarketDerivativesResult,
+  FoListResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -570,6 +571,15 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'Pre-market derivatives sentiment is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply pre-open F&O data.',
+    );
+  }
+
+  async getFoList(): Promise<FoListResult> {
+    // The Zerodha provider does not expose the NSE F&O tradable list feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'F&O tradable list is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the underlying-information feed.',
     );
   }
 

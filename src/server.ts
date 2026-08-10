@@ -911,6 +911,41 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'fo_tradable_list',
+    'List all stocks and indices that actually have futures & options (F&O) contracts on NSE. Use this to pick a valid underlying before running option-chain, IV, or strategy analysis — if a symbol is not on this list, it has no tradable options. Returns the index list, the stock list, and counts.',
+    {
+      type: z.enum(['ALL', 'STOCK', 'INDEX']).optional()
+        .describe('Which list to return: ALL (default), STOCK only, or INDEX only.'),
+    },
+    async ({ type }) => {
+      await ensureProvider();
+      const result = await provider.getFoList();
+
+      const filter = type ?? 'ALL';
+      const lines: string[] = [
+        `📋 F&O Tradable List (as of ${result.asOf})`,
+        `Indices: ${result.totalIndices} · Stocks: ${result.totalStocks}`,
+        '',
+      ];
+
+      if (filter === 'ALL' || filter === 'INDEX') {
+        lines.push('— Indices —');
+        lines.push(result.indices.map((i) => i.symbol).sort().join(', '));
+        lines.push('');
+      }
+
+      if (filter === 'ALL' || filter === 'STOCK') {
+        lines.push(`— Stocks (${result.totalStocks}) —`);
+        lines.push(result.stocks.map((s) => s.symbol).sort().join(', '));
+        lines.push('');
+      }
+
+      lines.push('↳ Only symbols shown here have tradable F&O contracts.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

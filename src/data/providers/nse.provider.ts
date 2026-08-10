@@ -22,6 +22,8 @@ import {
   IndiaVixResult,
   PreMarketDerivative,
   PreMarketDerivativesResult,
+  FoUnderlying,
+  FoListResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -710,6 +712,30 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  async getFoList(): Promise<FoListResult> {
+    const raw = await this.nseFetch<NseUnderlyingInfoResponse>(
+      '/api/underlying-information',
+    );
+    const data = raw.data ?? {};
+
+    const toUnderlying = (row: NseUnderlyingInfo, type: 'STOCK' | 'INDEX'): FoUnderlying => ({
+      symbol: row.symbol ?? row.underlying ?? '',
+      underlying: row.underlying ?? row.symbol ?? '',
+      type,
+    });
+
+    const stocks = (data.UnderlyingList ?? []).map((r) => toUnderlying(r, 'STOCK'));
+    const indices = (data.IndexList ?? []).map((r) => toUnderlying(r, 'INDEX'));
+
+    return {
+      asOf: raw.timestamp ?? new Date().toISOString(),
+      stocks,
+      indices,
+      totalStocks: stocks.length,
+      totalIndices: indices.length,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -986,6 +1012,20 @@ interface NsePreOpenFnoRow {
 
 interface NsePreOpenFnoResponse {
   data?: NsePreOpenFnoRow[];
+  timestamp?: string;
+}
+
+interface NseUnderlyingInfo {
+  serialNumber?: number;
+  symbol?: string;
+  underlying?: string;
+}
+
+interface NseUnderlyingInfoResponse {
+  data?: {
+    UnderlyingList?: NseUnderlyingInfo[];
+    IndexList?: NseUnderlyingInfo[];
+  };
   timestamp?: string;
 }
 

@@ -142,6 +142,22 @@ export interface PreMarketDerivativesResult {
   items: PreMarketDerivative[];
 }
 
+/** A single F&O tradable underlying. */
+export interface FoUnderlying {
+  symbol: string;
+  underlying: string;
+  type: 'STOCK' | 'INDEX';
+}
+
+/** List of all symbols that actually have F&O (futures & options) contracts. */
+export interface FoListResult {
+  asOf: string;
+  stocks: FoUnderlying[];
+  indices: FoUnderlying[];
+  totalStocks: number;
+  totalIndices: number;
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -185,6 +201,9 @@ export interface DataProvider {
   /** Get pre-market (pre-open) derivatives sentiment for index/stock futures */
   getPreMarketDerivatives(key?: 'FUTIDX' | 'FUTSTK'): Promise<PreMarketDerivativesResult>;
 
+  /** Get the full list of F&O tradable underlyings (stocks + indices) */
+  getFoList(): Promise<FoListResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -209,6 +228,7 @@ export abstract class BaseProvider implements DataProvider {
   abstract getMarketStatus(): Promise<MarketStatus>;
   abstract getIndiaVix(days?: number): Promise<IndiaVixResult>;
   abstract getPreMarketDerivatives(key?: 'FUTIDX' | 'FUTSTK'): Promise<PreMarketDerivativesResult>;
+  abstract getFoList(): Promise<FoListResult>;
 
   isReady(): boolean {
     return this._ready;
