@@ -46,7 +46,7 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | # | Feature | Plain description | Category | Status | Priority |
 |---|---------|------------------|----------|--------|----------|
 | 1 | **India VIX (volatility index)** | The "fear gauge" — how jumpy the market expects to be. Shows current VIX + recent history. | Options-relevant | 📋 Planned | High |
-| 2 | **Market open / closed + holidays** | Tells you if the market is open *right now*, the next trading day, and upcoming holidays — so you never fetch data when there's none. | Utility | 📋 Planned | Medium |
+| 2 | **Market open / closed + holidays** | Tells you if the market is open *right now*, the next trading day, and upcoming holidays — so you never fetch data when there's none. | Utility | ✅ Native | — |
 | 3 | **Pre-market derivatives sentiment** | Early read on how the day might open, from derivative activity. | Options-relevant | 📋 Planned | Medium |
 | 4 | **F&O tradable list** | A list of stocks & indices that actually have options/futures, so you can pick what to analyze. | Utility | 📋 Planned | Medium |
 | 5 | **Top movers (gainers / losers)** | Which stocks or indices moved the most today — a quick market feel. | Broad market | 📋 Planned | Low |
@@ -55,6 +55,11 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 8 | **Corporate actions / announcements** | Dividends, bonuses, board meetings, etc. | Broad market | 📋 Planned | Low |
 | 9 | **Stock & index charts** | Historical price charts for a symbol. | Broad market | 📋 Planned | Low |
 | 10 | **Block deals / insider trading** | Large trades and insider activity feed. | Broad market | 📋 Planned | Low |
+
+> **✅ Already present — Market Status (item #2):** The tool already provides this in two levels:
+> - **Basic:** the `market_status` tool and `market://status` resource return open/closed (🟢/🔴).
+> - **Detailed:** `getMarketStatusInfo()` returns a plain message — e.g. "Market opens at 9:15 AM IST", "Market closed (holiday/weekend)", "Market is open" — and accounts for weekends and NSE holidays.
+> *Caveat:* the holiday list is currently hardcoded for **2026 only**; it would need updating for future years (a small future fix, not blocking).
 
 ---
 
