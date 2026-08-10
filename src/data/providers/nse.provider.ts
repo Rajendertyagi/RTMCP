@@ -245,13 +245,46 @@ export class NSEProvider extends BaseProvider {
 
   // ── Session management ─────────────────────────────────────────────────
 
+  /**
+   * Pages to "open" when establishing a session. NSE's anti-bot only issues the
+   * cookie that the stricter APIs (notably /api/option-chain-indices) accept
+   * AFTER you've visited the matching page — visiting just "/" is not enough,
+   * which is why the option-chain call returns 404 without this warm-up.
+   */
+  private static readonly SESSION_SEED_PATHS = ['/', '/option-chain/indices'];
+
   private async refreshSession(): Promise<void> {
     console.error('[NSE] Refreshing session cookies …');
+    let mergedCookies = '';
+
+    for (const seed of NSEProvider.SESSION_SEED_PATHS) {
+      try {
+        const cookies = await this.fetchCookiesFor(seed);
+        if (cookies) {
+          mergedCookies = NSEProvider.mergeCookies(mergedCookies, cookies);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[NSE] Cookie warm failed for ${seed}: ${msg}`);
+      }
+      await sleep(300); // small gap so NSE doesn't rate-limit the warm-up
+    }
+
+    if (!mergedCookies) {
+      console.error('[NSE] WARNING — no cookies received from any seed page.');
+      throw new Error('NSE session refresh failed: no cookies received');
+    }
+
+    this.session = { cookies: mergedCookies, refreshedAt: Date.now() };
+    console.error(`[NSE] Session cookies obtained (length=${mergedCookies.length}).`);
+  }
+
+  /** Fetch a single page and return its raw cookie string (name=value pairs). */
+  private async fetchCookiesFor(path: string): Promise<string> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
     try {
-      const res = await fetch(NSE_BASE, {
+      const res = await fetch(`${NSE_BASE}${path}`, {
         headers: {
           'User-Agent': randomItem(USER_AGENTS),
           Accept:
@@ -269,24 +302,26 @@ export class NSEProvider extends BaseProvider {
         ? setCookieHeaders
         : (res.headers.get('set-cookie') ?? '').split(/,(?=\s*\w+=)/);
 
-      const cookies = cookieList
+      return cookieList
         .map((c) => c.split(';')[0].trim())
         .filter(Boolean)
         .join('; ');
-
-      if (!cookies) {
-        console.error('[NSE] WARNING — no cookies received from homepage.');
-      }
-
-      this.session = { cookies, refreshedAt: Date.now() };
-      console.error(`[NSE] Session cookies obtained (length=${cookies.length}).`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[NSE] Failed to refresh session: ${msg}`);
-      throw new Error(`NSE session refresh failed: ${msg}`);
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  /** Merge two "name=value; name=value" cookie strings; last value wins. */
+  private static mergeCookies(a: string, b: string): string {
+    const map = new Map<string, string>();
+    for (const part of `${a}; ${b}`.split(';')) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const idx = trimmed.indexOf('=');
+      if (idx <= 0) continue;
+      map.set(trimmed.slice(0, idx), trimmed.slice(idx + 1));
+    }
+    return [...map.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
   }
 
   private isSessionStale(): boolean {
@@ -352,8 +387,8 @@ export class NSEProvider extends BaseProvider {
           signal: controller.signal,
         });
 
-        // 401/403 ⇒ session expired — refresh and retry.
-        if (res.status === 401 || res.status === 403) {
+        // 401/403/404 ⇒ session expired or anti-bot block — refresh and retry.
+        if (res.status === 401 || res.status === 403 || res.status === 404) {
           console.error(
             `[NSE] ${res.status} on ${path} – refreshing session (attempt ${attempt}/${MAX_RETRIES}).`,
           );
