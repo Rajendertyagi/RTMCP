@@ -158,6 +158,27 @@ export interface FoListResult {
   totalIndices: number;
 }
 
+/** A single top-mover (gainers/losers) row. */
+export interface MarketMover {
+  symbol: string;
+  lastPrice: number;
+  change: number;
+  pChange: number;
+  volume: number;
+  open: number;
+  high: number;
+  low: number;
+  previousClose: number;
+}
+
+/** Top gainers & losers snapshot for an index. */
+export interface TopMoversResult {
+  index: string;
+  asOf: string;
+  gainers: MarketMover[];
+  losers: MarketMover[];
+}
+
 // ── Provider interface & abstract base class ───────────────────────────────
 
 export interface DataProvider {
@@ -204,6 +225,9 @@ export interface DataProvider {
   /** Get the full list of F&O tradable underlyings (stocks + indices) */
   getFoList(): Promise<FoListResult>;
 
+  /** Get top gainers & losers (market movers) for an index */
+  getTopMovers(index?: string): Promise<TopMoversResult>;
+
   /** Check if provider is ready */
   isReady(): boolean;
 }
@@ -229,6 +253,7 @@ export abstract class BaseProvider implements DataProvider {
   abstract getIndiaVix(days?: number): Promise<IndiaVixResult>;
   abstract getPreMarketDerivatives(key?: 'FUTIDX' | 'FUTSTK'): Promise<PreMarketDerivativesResult>;
   abstract getFoList(): Promise<FoListResult>;
+  abstract getTopMovers(index?: string): Promise<TopMoversResult>;
 
   isReady(): boolean {
     return this._ready;

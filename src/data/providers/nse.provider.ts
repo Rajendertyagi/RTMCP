@@ -24,7 +24,11 @@ import {
   PreMarketDerivativesResult,
   FoUnderlying,
   FoListResult,
+  MarketMover,
+  TopMoversResult,
 } from './base.provider.js';
+
+import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -736,6 +740,43 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  async getTopMovers(index = 'NIFTY'): Promise<TopMoversResult> {
+    const key = index.toUpperCase();
+
+    // NSE returns the gainers and losers lists as separate endpoints.
+    const [gainersRaw, losersRaw] = await Promise.all([
+      this.nseFetch<NseTopMoversResponse>(
+        `/api/live-analysis/top-gainers?index=${encodeURIComponent(key)}`,
+      ),
+      this.nseFetch<NseTopMoversResponse>(
+        `/api/live-analysis/top-losers?index=${encodeURIComponent(key)}`,
+      ),
+    ]);
+
+    const toMover = (r: NseMover): MarketMover => ({
+      symbol: r.symbol ?? '',
+      lastPrice: Number(r.lastPrice ?? 0),
+      change: Number(r.change ?? 0),
+      pChange: Number(r.pChange ?? 0),
+      volume: Number(r.volume ?? r.tradedVolume ?? 0),
+      open: Number(r.open ?? 0),
+      high: Number(r.high ?? r.dayHigh ?? 0),
+      low: Number(r.low ?? r.dayLow ?? 0),
+      previousClose: Number(r.previousClose ?? 0),
+    });
+
+    // The endpoint may return a bare array or an object wrapping `data`.
+    const normalize = (r: NseTopMoversResponse): NseMover[] =>
+      Array.isArray(r) ? r : (r.data ?? []);
+
+    return {
+      index: key,
+      asOf: new Date().toISOString(),
+      gainers: normalize(gainersRaw).map(toMover),
+      losers: normalize(losersRaw).map(toMover),
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -1028,6 +1069,24 @@ interface NseUnderlyingInfoResponse {
   };
   timestamp?: string;
 }
+
+interface NseMover {
+  symbol?: string;
+  lastPrice?: number | string;
+  change?: number | string;
+  pChange?: number | string;
+  volume?: number | string;
+  tradedVolume?: number | string;
+  open?: number | string;
+  high?: number | string;
+  dayHigh?: number | string;
+  low?: number | string;
+  dayLow?: number | string;
+  previousClose?: number | string;
+}
+
+// The endpoint returns either a bare array or an object wrapping `data`.
+type NseTopMoversResponse = NseMover[] | { data?: NseMover[] };
 
 interface NseLiveDerivativesRow {
   underlying?: string;

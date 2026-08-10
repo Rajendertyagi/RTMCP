@@ -19,6 +19,7 @@ import {
   IndiaVixResult,
   PreMarketDerivativesResult,
   FoListResult,
+  TopMoversResult,
 } from './base.provider.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -580,6 +581,15 @@ export class ZerodhaProvider extends BaseProvider {
     throw new Error(
       'F&O tradable list is only available via the free NSE provider. ' +
         'The Zerodha provider does not supply the underlying-information feed.',
+    );
+  }
+
+  async getTopMovers(_index?: string): Promise<TopMoversResult> {
+    // The Zerodha provider does not expose the NSE top-movers (gainers/losers) feed.
+    // Use the free NSE provider for this feature.
+    throw new Error(
+      'Top movers (gainers/losers) is only available via the free NSE provider. ' +
+        'The Zerodha provider does not supply the live-analysis feed.',
     );
   }
 

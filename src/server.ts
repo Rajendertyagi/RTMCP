@@ -946,6 +946,43 @@ export function createServer(): McpServer {
   );
 
   server.tool(
+    'top_movers',
+    'Quick market feel — the top gainers and losers (by % change) for an index right now. Default is NIFTY; pass another index (e.g. BANKNIFTY, FINNIFTY, NIFTY 50) to narrow it. Helps you spot which stocks or indices are moving the most today. Only meaningful during market hours.',
+    {
+      index: z.string().optional()
+        .describe("Index to scan, e.g. NIFTY (default), BANKNIFTY, FINNIFTY, NIFTY 50."),
+    },
+    async ({ index }) => {
+      await ensureProvider();
+      const result = await provider.getTopMovers(index);
+
+      if (!result.gainers.length && !result.losers.length) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text:
+              `No top-movers data available right now for ${result.index}. ` +
+              'This feed is populated during market hours on trading days. Try again when the market is open.',
+          }],
+        };
+      }
+
+      const lines: string[] = [`📈 Top Movers — ${result.index} (as of ${result.asOf})`, ''];
+
+      const fmt = (m: { symbol: string; lastPrice: number; pChange: number }) =>
+        `  ${m.symbol.padEnd(12)} ₹${m.lastPrice.toFixed(2).padStart(10)}  ${m.pChange >= 0 ? '+' : ''}${m.pChange.toFixed(2)}%`;
+
+      lines.push('🟢 Top Gainers');
+      for (const g of result.gainers.slice(0, 10)) lines.push(fmt(g));
+      lines.push('', '🔴 Top Losers');
+      for (const l of result.losers.slice(0, 10)) lines.push(fmt(l));
+
+      lines.push('', '↳ Sorted by % change; figures are live during market hours.');
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  server.tool(
     'lot_size',
     'Get the F&O lot size (number of shares per contract) for any NSE stock or index. Essential for calculating strategy costs, margin, and position sizing. Returns the current lot size as defined by NSE.',
     {

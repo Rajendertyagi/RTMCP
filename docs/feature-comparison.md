@@ -49,7 +49,7 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 | 2 | **Market open / closed + holidays** | Tells you if the market is open *right now*, the next trading day, and upcoming holidays — so you never fetch data when there's none. | Utility | ✅ Native | — |
 | 3 | **Pre-market derivatives sentiment** | Early read on how the day might open, from derivative activity. | Options-relevant | ➕ Added | Medium |
 | 4 | **F&O tradable list** | A list of stocks & indices that actually have options/futures, so you can pick what to analyze. | Utility | ➕ Added | Medium |
-| 5 | **Top movers (gainers / losers)** | Which stocks or indices moved the most today — a quick market feel. | Broad market | 📋 Planned | Low |
+| 5 | **Top movers (gainers / losers)** | Which stocks or indices moved the most today — a quick market feel. | Broad market | ➕ Added | Low |
 | 6 | **Live indices / Nifty 50 & 500 lists** | Current values of major indices and their constituent lists. | Broad market | 📋 Planned | Low |
 | 7 | **IPO tracker** | Current IPOs, pre-open IPOs, and a summary view. | Broad market | 📋 Planned | Low |
 | 8 | **Corporate actions / announcements** | Dividends, bonuses, board meetings, etc. | Broad market | 📋 Planned | Low |
@@ -66,6 +66,8 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 > **➕ Built — Pre-market derivatives sentiment (item #3):** New `pre_market_sentiment` tool (plus `getPreMarketDerivatives()` on the NSE provider; Zerodha throws "not supported"). Pulls the pre-open F&O auction feed (`FUTIDX` index futures by default, or `FUTSTK` stock futures) and shows each contract's indicative equilibrium price (IEP) vs previous close, the top movers, and an advancing/declining breadth count for a quick bullish/bearish bias. Only populated during the pre-open window (≈9:00–9:15 AM IST). Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 > **➕ Built — F&O tradable list (item #4):** New `fo_tradable_list` tool (plus `getFoList()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's underlying-information feed and returns the full list of F&O-eligible indices + stocks (with counts), so you can pick a valid underlying before running option-chain/IV/strategy analysis. Optional `type` filter: ALL / STOCK / INDEX. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
+
+> **➕ Built — Top movers (item #5):** New `top_movers` tool (plus `getTopMovers()` on the NSE provider; Zerodha throws "not supported"). Pulls NSE's live-analysis top-gainers / top-losers feeds for an index (default NIFTY; override with BANKNIFTY, FINNIFTY, NIFTY 50, …) and shows the top 10 gainers and losers by % change with last price. Only populated during market hours. Verified: lint clean, 18/18 tests pass, build + bundle succeed.
 
 ---
 
