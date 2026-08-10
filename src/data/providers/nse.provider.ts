@@ -57,6 +57,7 @@ import {
 
 import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.js';
 import { LOT_SIZES } from '../constants/lot-sizes.js';
+import { logEvent, logNetwork, logNse } from '../../utils/event-log.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -357,6 +358,7 @@ export class NSEProvider extends BaseProvider {
             `[NSE] ${res.status} on ${path} – refreshing session (attempt ${attempt}/${MAX_RETRIES}).`,
           );
           await this.refreshSession();
+          logNse(`NSE HTTP ${res.status} on ${path} — refreshing session`);
           lastError = new Error(`HTTP ${res.status}`);
           await sleep(BASE_BACKOFF_MS * attempt);
           continue;
@@ -367,12 +369,14 @@ export class NSEProvider extends BaseProvider {
           console.error(
             `[NSE] 429 rate-limited on ${path} (attempt ${attempt}/${MAX_RETRIES}).`,
           );
+          logNse(`NSE rate-limited (429) on ${path}`);
           lastError = new Error('HTTP 429 – rate limited');
           await sleep(BASE_BACKOFF_MS * attempt * 2);
           continue;
         }
 
         if (!res.ok) {
+          logNse(`NSE HTTP ${res.status} ${res.statusText} on ${path}`);
           lastError = new Error(`HTTP ${res.status} ${res.statusText}`);
           console.error(
             `[NSE] ${lastError.message} on ${path} (attempt ${attempt}/${MAX_RETRIES}).`,
@@ -392,15 +396,19 @@ export class NSEProvider extends BaseProvider {
             `[NSE] Got HTML instead of JSON on ${path} — likely blocked. Refreshing session (attempt ${attempt}/${MAX_RETRIES}).`,
           );
           await this.refreshSession();
+          logNse(`NSE returned HTML (blocked) on ${path}`);
           lastError = new Error('NSE returned HTML instead of JSON (blocked)');
           await sleep(BASE_BACKOFF_MS * attempt);
           continue;
         }
 
         try {
-          return JSON.parse(text) as T;
+          const parsed = JSON.parse(text) as T;
+          logEvent('nse', 'debug', `NSE OK: ${path}`);
+          return parsed;
         } catch {
           lastError = new Error('Invalid JSON from NSE');
+          logNse(`NSE invalid JSON on ${path}`);
           console.error(
             `[NSE] JSON parse error on ${path} (attempt ${attempt}/${MAX_RETRIES}).`,
           );
@@ -410,6 +418,7 @@ export class NSEProvider extends BaseProvider {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         lastError = new Error(msg);
+        logNetwork(`NSE fetch failed on ${path}: ${msg}`);
         console.error(
           `[NSE] Fetch error on ${path}: ${msg} (attempt ${attempt}/${MAX_RETRIES}).`,
         );

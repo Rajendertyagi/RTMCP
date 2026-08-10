@@ -72,6 +72,30 @@ tr.cat-unwind td:first-child { border-left: 3px solid #e67e22; }
 tr.cat-cover td:first-child { border-left: 3px solid #3498db; }
 tr.cat-neutral td:first-child { border-left: 3px solid var(--muted); }
 .hint { margin-top: 14px; }
+.warn-text { color: #f0a85a; }
+.log-filter {
+  background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px;
+}
+.auto-toggle {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--muted);
+  font-size: 12px; cursor: pointer; user-select: none;
+}
+.log-empty { margin: 18px 0; }
+.badge {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.badge-ai { background: #16304d; color: #7fb6ff; }
+.badge-request { background: #14352a; color: #6fe0a0; }
+.badge-network { background: #431f1f; color: #ff9b9b; }
+.badge-nse { background: #43340f; color: #ffd37f; }
+.badge-error { background: #431616; color: #ff7f7f; }
+.badge-info { background: #232a36; color: #9fb0c8; }
+.badge-debug { background: #232a36; color: #9fb0c8; }
+.badge.lvl-error { box-shadow: 0 0 0 1px #ff5a5a inset; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+td.msg { white-space: pre-wrap; word-break: break-word; }
 `;
 
 export const INDEX_HTML = `
@@ -102,16 +126,31 @@ export const INDEX_HTML = `
     <button class="nav-btn" data-route="breadth" data-label="Market Breadth">Market Breadth</button>
     <button class="nav-btn" data-route="week52" data-label="52-Week High/Low">52-Week High/Low</button>
     <button class="nav-btn" data-route="lot-sizes" data-label="Lot Sizes">Lot Sizes</button>
+    <button class="nav-btn" data-route="logs" data-label="Logs">Logs</button>
   </nav>
   <main class="content">
     <div class="toolbar" id="toolbar">
       <h1 id="viewTitle">Live Indices</h1>
       <span id="status" class="status">-</span>
-      <input id="symbolInput" class="symbol" type="text" placeholder="symbol / index (e.g. NIFTY, BANKNIFTY)" />
+      <span id="symbolWrap">
+        <input id="symbolInput" class="symbol" type="text" placeholder="symbol / index (e.g. NIFTY, BANKNIFTY)" />
+      </span>
+      <select id="logFilter" class="log-filter" style="display:none">
+        <option value="">All activity</option>
+        <option value="ai">AI calls (Claude)</option>
+        <option value="request">Page requests</option>
+        <option value="network">Network errors</option>
+        <option value="nse">NSE errors</option>
+        <option value="error">All errors</option>
+        <option value="info">Info / status</option>
+      </select>
+      <label id="logAutoWrap" class="auto-toggle" style="display:none">
+        <input id="logAuto" type="checkbox" checked /> Auto-refresh (2s)
+      </label>
       <button id="refreshBtn" class="refresh">Refresh</button>
     </div>
     <div id="output" class="output"></div>
-    <p class="hint muted">Data is fetched live from NSE. First load may take a moment. Green = up, red = down. OI-vs-Price rows are color-coded by buildup type.</p>
+    <p id="globalHint" class="hint muted">Data is fetched live from NSE. First load may take a moment. Green = up, red = down. OI-vs-Price rows are color-coded by buildup type.</p>
   </main>
 </div>
 <script src="/app.js"></script>
@@ -128,6 +167,13 @@ var refreshBtn = document.getElementById('refreshBtn');
 var viewTitle = document.getElementById('viewTitle');
 var statusLine = document.getElementById('status');
 var output = document.getElementById('output');
+
+var logFilter = document.getElementById('logFilter');
+var logAuto = document.getElementById('logAuto');
+var logAutoWrap = document.getElementById('logAutoWrap');
+var symbolWrap = document.getElementById('symbolWrap');
+var globalHint = document.getElementById('globalHint');
+var logTimer = null;
 
 var currentRoute = 'indices/live';
 var currentLabel = 'Live Indices';
@@ -152,12 +198,16 @@ function setActive(btn) {
 }
 
 function load(route, label, btn) {
+  stopLogTimer();
   currentRoute = route;
   currentLabel = label;
   if (btn) setActive(btn);
   viewTitle.textContent = label;
+  var isLogs = (route === 'logs');
+  setLogsToolbar(isLogs);
   statusLine.textContent = 'Loading...';
   output.innerHTML = '';
+  if (isLogs) { startLogView(); return; }
   var q = buildQuery();
   var url = '/api/' + route + (q ? '?' + q : '');
   fetch(url)
@@ -257,6 +307,98 @@ function renderKeyValue(data) {
   html += '</tbody></table>';
   output.innerHTML = html;
 }
+
+function formatTs(iso) {
+  try {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+      + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  } catch (e) { return iso; }
+}
+
+function badgeClassFor(category) {
+  switch (category) {
+    case 'ai': return 'badge-ai';
+    case 'request': return 'badge-request';
+    case 'network': return 'badge-network';
+    case 'nse': return 'badge-nse';
+    case 'error': return 'badge-error';
+    case 'info': return 'badge-info';
+    case 'debug': return 'badge-debug';
+    default: return 'badge-info';
+  }
+}
+
+function currentLogFilter() {
+  return (logFilter && logFilter.value) ? logFilter.value : '';
+}
+
+function setLogsToolbar(isLogs) {
+  if (symbolWrap) symbolWrap.style.display = isLogs ? 'none' : '';
+  if (logFilter) logFilter.style.display = isLogs ? '' : 'none';
+  if (logAutoWrap) logAutoWrap.style.display = isLogs ? '' : 'none';
+  if (globalHint) globalHint.style.display = isLogs ? 'none' : '';
+}
+
+function stopLogTimer() {
+  if (logTimer) { clearInterval(logTimer); logTimer = null; }
+}
+
+function renderLogs(entries) {
+  var n = entries.length;
+  statusLine.textContent = n + ' event' + (n === 1 ? '' : 's') + ' shown';
+  if (!n) {
+    output.innerHTML = '<p class="muted log-empty">No log entries yet. Use the tool in Claude Desktop, or browse this dashboard — activity shows up here live.</p>';
+    return;
+  }
+  var html = '<table><thead><tr><th>Time</th><th>Type</th><th>Message</th></tr></thead><tbody>';
+  for (var i = 0; i < n; i++) {
+    var e = entries[i];
+    var lvl = e.level || 'info';
+    var cat = e.category || 'info';
+    var msgCls = (lvl === 'error') ? ' class="neg"' : (lvl === 'warn' ? ' class="warn-text"' : '');
+    var lvlBadge = (lvl === 'error') ? ' lvl-error' : '';
+    html += '<tr class="log-row">'
+      + '<td class="mono">' + escapeHtml(formatTs(e.ts || '')) + '</td>'
+      + '<td><span class="badge ' + badgeClassFor(cat) + lvlBadge + '">' + escapeHtml(cat) + '</span></td>'
+      + '<td class="msg"' + msgCls + '>' + escapeHtml(e.message || '') + '</td>'
+      + '</tr>';
+  }
+  html += '</tbody></table>';
+  output.innerHTML = html;
+}
+
+function refreshLogs() {
+  var f = currentLogFilter();
+  var url = '/api/logs?limit=400' + (f ? '&filter=' + encodeURIComponent(f) : '');
+  fetch(url)
+    .then(function (r) { return r.json(); })
+    .then(function (body) {
+      if (!body.ok) { statusLine.textContent = 'Error: ' + (body.error || 'unknown'); return; }
+      renderLogs(body.data || []);
+    })
+    .catch(function (e) { statusLine.textContent = 'Error: ' + e.message; });
+}
+
+function startLogView() {
+  refreshLogs();
+  stopLogTimer();
+  if (logAuto && logAuto.checked) {
+    logTimer = setInterval(function () {
+      if (document.hidden) return;
+      refreshLogs();
+    }, 2000);
+  }
+}
+
+if (logFilter) logFilter.addEventListener('change', function () {
+  if (currentRoute === 'logs') startLogView();
+});
+if (logAuto) logAuto.addEventListener('change', function () {
+  if (currentRoute === 'logs') startLogView();
+});
 
 var navBtns = document.querySelectorAll('.nav-btn');
 for (var n = 0; n < navBtns.length; n++) {

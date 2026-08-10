@@ -92,6 +92,24 @@ Then open `http://localhost:8787`.
 
 To stop it, close the terminal window (or press `Ctrl+C`). This is a **separate mode** from Claude — when you run `--dashboard` you get the web page; when Claude runs the tool normally it feeds Claude as before. Use whichever you prefer. Like the rest of the tool, the dashboard needs internet access to fetch live market data from NSE.
 
+**Seeing what's going on (the Logs view):** the dashboard has a **Logs** button on the left. It shows a live, filterable list of everything happening behind the scenes — this is the easiest way to answer "is the AI actually hitting the server?" and "am I getting errors from the network or NSE?":
+
+- **AI calls (Claude)** — every time Claude asks the tool for something.
+- **Network errors** — if a request to NSE times out or can't connect.
+- **NSE errors** — if NSE blocks the request or sends back garbage instead of data.
+- **All errors** — every error in one place.
+- **Page requests** — what the dashboard itself asked for.
+- **Info / status** — routine messages.
+
+It refreshes itself every 2 seconds (untick the checkbox to stop). When Claude "isn't responding," open **Logs** — you'll immediately see whether Claude is talking to the tool at all, or whether NSE is the one failing. The full history is also saved to a plain file on your computer:
+
+```
+Windows:  C:\Users\YOURNAME\.rtmcp\rtmcp.log
+Mac/Linux:  ~/.rtmcp/rtmcp.log
+```
+
+If you ever need to report a problem, that file contains the complete record.
+
 ## Keeping it updated
 - **Option A:** restart Claude Desktop — it fetches the latest automatically.
 - **Option B:** in the project folder run `git pull` then `npm install && npm run build`.

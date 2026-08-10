@@ -8,6 +8,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import type { DataProvider } from '../data/providers/base.provider.js';
+import { readLogEntries } from '../utils/event-log.js';
 
 type RouteHandler = (
   provider: DataProvider,
@@ -28,6 +29,12 @@ const routes: Record<string, RouteHandler> = {
   breadth: (p, q) => p.getMarketBreadth(q.get('index') || undefined),
   week52: (p) => p.getWeek52HighLow(),
   'lot-sizes': (p, q) => p.getLotSizes(q.get('symbol') || undefined),
+  // Observability: read the shared activity log (see src/utils/event-log.ts).
+  logs: async (_p, q) =>
+    readLogEntries({
+      filter: (q.get('filter') || undefined) ?? undefined,
+      limit: q.get('limit') ? Number(q.get('limit')) : undefined,
+    }),
 };
 
 export interface ApiResult {

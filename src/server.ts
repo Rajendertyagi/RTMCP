@@ -34,6 +34,7 @@ import { INDICES, getIndexByTradingSymbol } from './data/constants/indices.js';
 // Utils
 import { daysToExpiry, isMarketOpen, getMarketStatusInfo } from './utils/date.js';
 import { formatCurrency, formatNumber, formatPercent, formatLargeNumber, formatOI } from './utils/format.js';
+import { logAi } from './utils/event-log.js';
 
 // Types — use the provider's own interface, not the model
 import type { OptionChainData, OptionData } from './data/providers/base.provider.js';
@@ -70,6 +71,35 @@ export function createServer(): McpServer {
     name: 'indian-option-mcp',
     version: '1.1.0',
   });
+
+  // ── Activity logging (for the dashboard's "Logs" view) ──
+  // Wrap the low-level request handler so EVERY tool call Claude makes is recorded
+  // as an "ai" log entry. The original handler is always delegated to, so tool
+  // behaviour is completely unchanged — this only adds an observability side-effect.
+  const lowServer = server.server as unknown as {
+    setRequestHandler: (
+      schema: unknown,
+      handler: (req: unknown, extra: unknown) => unknown,
+    ) => unknown;
+  };
+  const origSetRequestHandler = lowServer.setRequestHandler.bind(lowServer);
+  lowServer.setRequestHandler = (
+    schema: unknown,
+    handler: (req: unknown, extra: unknown) => unknown,
+  ): unknown => {
+    const wrapped = (req: unknown, extra: unknown) => {
+      try {
+        const r = req as { method?: string; params?: { name?: string } };
+        if (r.method === 'tools/call') {
+          logAi(`Claude called tool: ${r.params?.name ?? 'unknown'}`);
+        }
+      } catch {
+        // logging must never break a tool call
+      }
+      return handler(req, extra);
+    };
+    return origSetRequestHandler(schema, wrapped);
+  };
 
   // Fire-and-forget: start init in background (but don't block server startup)
   ensureProvider().catch(() => {});

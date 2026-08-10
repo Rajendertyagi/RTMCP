@@ -1,6 +1,6 @@
 # Feature Comparison & Tracking — NseKit vs Our Options Tool
 
-*Plain-language checklist for the owner (non-coder). Last updated: 2026-08-10.*
+*Plain-language checklist for the owner (non-coder). Last updated: 2026-08-11.*
 
 This document does two things:
 1. Shows what **NseKit** (the Python library we studied) can do, next to what **our tool** (Indian-Option-MCP, written in TypeScript) can already do.
@@ -110,6 +110,8 @@ We will pick these in order, one at a time. "Category" tells you how relevant it
 > **➕ Built — Lot Sizes (item #20):** New `fno_lot_sizes` tool (plus `getLotSizes()` on the NSE provider; Zerodha throws "only available via the free NSE provider"). Returns the standard F&O lot size per symbol from a **maintained local table** (`LOT_SIZES` constant, ~250 entries incl. NIFTY=75, BANKNIFTY=30) — **no network call**, so it's always fast and never rate-limited. Optional `symbol` filter; without it, returns the full sorted list. Verified: 37/37 tests pass (5 files), build + bundle succeed (961.0 kb).
 
 > **➕ Added — Local Web Dashboard (GUI mode):** The tool can now open a **local web page** on your own computer so you can *see* the live data without going through Claude. Run the `.exe` (or `node dist/bundle.mjs`) with the `--dashboard` flag; it serves a self-contained page at `http://localhost:8787` and opens it in your browser automatically. It reuses every existing data feed — live indices, F&O futures, OI-vs-price matrix, FII/DII, market breadth, IPO tracker, and more — in a clickable, color-coded GUI. Pure TypeScript, **zero new dependencies**, and the frontend is embedded *inside* the program so it stays a single self-contained `.exe`. Like the rest of the tool, it talks only to NSE (localhost-only, nothing exposed to the internet). Verified: 37/37 tests pass (5 files), build + bundle succeed (961.0 kb).
+
+> **➕ Added — Logs view (dashboard observability):** The dashboard's new **Logs** button shows a live, filterable activity feed so you can see what the tool is doing *behind the scenes* — the owner-requested "is the AI hitting the server / am I getting NSE or network errors" visibility. It records every **AI call** (Claude asking the tool for something), **page request** (what the dashboard itself fetched), **network error** (request to NSE timed out / failed to connect), **NSE error** (NSE blocked the request or returned garbage), and **info/status** messages. A dropdown filters to just one type (e.g. "Network errors" or "AI calls (Claude)"), and the list auto-refreshes every 2 seconds (toggleable). Because the tool can run as two separate programs at once (one feeding Claude, one showing the web page), the log is written to a **shared file on your computer** (`~/.rtmcp/rtmcp.log`, i.e. `C:\Users\YOURNAME\.rtmcp\rtmcp.log` on Windows) that both programs write to and the dashboard reads — so the Logs view shows whether Claude is actually talking to the tool, even though they run independently. Verified: 37/37 tests pass (5 files), build + bundle succeed (961.0 kb).
 
 ---
 

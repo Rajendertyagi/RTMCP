@@ -12,6 +12,7 @@ import { createDataProvider } from '../data/provider-factory.js';
 import { handleApi } from './router.js';
 import { DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_URL } from '../data/constants/dashboard.js';
 import { INDEX_HTML, APP_JS, STYLES_CSS } from './assets.js';
+import { logRequest, logError, logInfo } from '../utils/event-log.js';
 
 interface StaticAsset {
   body: string;
@@ -35,7 +36,21 @@ export async function startDashboard(): Promise<void> {
       const pathname = url.pathname;
 
       if (pathname.startsWith('/api/')) {
+        // Log activity (skip the self-referential logs poll to avoid noise).
+        if (pathname !== '/api/logs') {
+          logRequest(`Dashboard request: ${pathname}`);
+        }
         const { status, body } = await handleApi(pathname, url.searchParams, provider);
+        if (
+          pathname !== '/api/logs' &&
+          status >= 400 &&
+          body &&
+          typeof body === 'object' &&
+          'error' in body
+        ) {
+          const msg = (body as { error?: string }).error ?? 'unknown error';
+          logError(`Dashboard request failed (${status}): ${pathname} — ${msg}`);
+        }
         res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(body));
         return;
@@ -53,6 +68,7 @@ export async function startDashboard(): Promise<void> {
 
   server.listen(DASHBOARD_PORT, DASHBOARD_HOST, () => {
     console.error('Dashboard running at ' + DASHBOARD_URL);
+    logInfo('Dashboard server started at ' + DASHBOARD_URL);
     openInBrowser(DASHBOARD_URL);
   });
 }
