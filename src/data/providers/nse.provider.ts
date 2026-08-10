@@ -26,6 +26,14 @@ import {
   FoListResult,
   MarketMover,
   TopMoversResult,
+  IndexValue,
+  LiveIndicesResult,
+  IndexConstituent,
+  IndexConstituentsResult,
+  IpoInfo,
+  IpoPreOpen,
+  IpoTrackerItem,
+  IpoTrackerResult,
 } from './base.provider.js';
 
 import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.js';
@@ -33,6 +41,45 @@ import { getIndexByTradingSymbol, getIndexBySymbol } from '../constants/indices.
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const NSE_BASE = 'https://www.nseindia.com';
+
+/**
+ * Resolves the many ways a user might name an index to the exact string the
+ * NSE `/api/equity-stock-indices?index=` endpoint expects. Kept deliberately
+ * small and explicit — anything not listed is passed through unchanged so the
+ * user can supply the precise NSE name if needed.
+ */
+const INDEX_NAME_MAP: Record<string, string> = {
+  'NIFTY 50': 'NIFTY 50',
+  'NIFTY50': 'NIFTY 50',
+  'NIFTY 500': 'NIFTY 500',
+  'NIFTY500': 'NIFTY 500',
+  'NIFTY BANK': 'NIFTY BANK',
+  'BANKNIFTY': 'NIFTY BANK',
+  'NIFTY IT': 'NIFTY IT',
+  'NIFTY MIDCAP 50': 'NIFTY MIDCAP 50',
+  'NIFTY MIDCAP 100': 'NIFTY MIDCAP 100',
+  'NIFTY MIDCAP 150': 'NIFTY MIDCAP 150',
+  'NIFTY SMALLCAP 50': 'NIFTY SMALLCAP 50',
+  'NIFTY SMALLCAP 100': 'NIFTY SMALLCAP 100',
+  'NIFTY SMALLCAP 250': 'NIFTY SMALLCAP 250',
+  'NIFTY NEXT 50': 'NIFTY NEXT 50',
+  'NIFTY FIN SERVICE': 'NIFTY FIN SERVICE',
+  'NIFTY FINANCIAL SERVICES': 'NIFTY FIN SERVICE',
+  'NIFTY FMCG': 'NIFTY FMCG',
+  'NIFTY PHARMA': 'NIFTY PHARMA',
+  'NIFTY METAL': 'NIFTY METAL',
+  'NIFTY AUTO': 'NIFTY AUTO',
+  'NIFTY ENERGY': 'NIFTY ENERGY',
+  'NIFTY REALTY': 'NIFTY REALTY',
+  'NIFTY MEDIA': 'NIFTY MEDIA',
+  'NIFTY PSU BANK': 'NIFTY PSU BANK',
+  'NIFTY PRIVATE BANK': 'NIFTY PRIVATE BANK',
+  'NIFTY HEALTHCARE': 'NIFTY HEALTHCARE',
+  'NIFTY CONSUMER DURABLES': 'NIFTY CONSUMER DURABLES',
+  'NIFTY OIL AND GAS': 'NIFTY OIL AND GAS',
+  'SECURITIES IN F&O': 'SECURITIES IN F&O',
+  'PERMITTED TO TRADE': 'PERMITTED TO TRADE',
+};
 
 /** Known index symbols that need the *indices* option-chain endpoint. */
 const INDEX_SYMBOLS = new Set([
@@ -858,6 +905,135 @@ export class NSEProvider extends BaseProvider {
     };
   }
 
+  // ── Feature #6: live indices + constituent lists ───────────────────────
+
+  async getLiveIndices(): Promise<LiveIndicesResult> {
+    const raw = await this.nseFetch<NseAllIndicesResponse>('/api/allIndices');
+    const rows = raw.data ?? [];
+
+    if (!rows.length) {
+      throw new Error(
+        'NSE returned no index values from /api/allIndices. ' +
+          'The market may be closed or NSE may be undergoing maintenance. Try again later.',
+      );
+    }
+
+    const indices: IndexValue[] = rows.map((d) => ({
+      symbol: d.index ?? '',
+      indexSymbol: d.indexSymbol ?? '',
+      last: d.last ?? 0,
+      variation: d.variation ?? 0,
+      percentChange: d.percentChange ?? 0,
+      open: d.open ?? 0,
+      high: d.high ?? 0,
+      low: d.low ?? 0,
+      previousClose: d.previousClose ?? 0,
+      timeVal: d.timeVal ?? new Date().toISOString(),
+    }));
+
+    return {
+      asOf: indices[0]?.timeVal ?? new Date().toISOString(),
+      indices,
+    };
+  }
+
+  async getIndexConstituents(index: string): Promise<IndexConstituentsResult> {
+    const category = index.trim().toUpperCase();
+
+    // NSE uses slightly different index-name spellings for some categories.
+    const resolved = INDEX_NAME_MAP[category] ?? category;
+    const encoded = resolved.replace(/&/g, '%26').replace(/ /g, '%20');
+
+    const raw = await this.nseFetch<NseStockIndicesResponse>(
+      `/api/equity-stock-indices?index=${encoded}`,
+    );
+    const rows = raw.data ?? [];
+
+    const constituents: IndexConstituent[] = rows
+      // Drop the index's own summary row (its symbol equals the index name).
+      .filter((r) => r.symbol && r.symbol.toUpperCase() !== resolved.toUpperCase())
+      .map((r) => ({
+        symbol: r.symbol ?? '',
+        lastPrice: Number(r.lastPrice ?? 0),
+        change: Number(r.change ?? 0),
+        pChange: Number(r.pChange ?? 0),
+        open: Number(r.open ?? 0),
+        high: Number(r.dayHigh ?? 0),
+        low: Number(r.dayLow ?? 0),
+        previousClose: Number(r.previousClose ?? 0),
+        volume: Number(r.totalTradedVolume ?? 0),
+        value: Number(r.totalTradedValue ?? 0),
+      }));
+
+    return {
+      index: category,
+      asOf: new Date().toISOString(),
+      constituents,
+    };
+  }
+
+  // ── Feature #7: IPO tracker ─────────────────────────────────────────────
+
+  async getIpoTracker(): Promise<IpoTrackerResult> {
+    // Three independent feeds — fetch in parallel.
+    const [currentRaw, preOpenRaw, summaryRaw] = await Promise.all([
+      this.nseFetch<NseIpoCurrentResponse>('/api/ipo-current-issue'),
+      this.nseFetch<NseIpoPreOpenResponse>('/api/special-preopen-listing'),
+      this.nseFetch<NseIpoTrackerResponse>(
+        '/api/NextApi/apiClient?functionName=getIPOTrackerSummary',
+      ),
+    ]);
+
+    const current: IpoInfo[] = (currentRaw ?? []).map((r) => ({
+      symbol: r.symbol ?? '',
+      companyName: r.companyName ?? '',
+      series: r.series ?? '',
+      issueStartDate: r.issueStartDate ?? '',
+      issueEndDate: r.issueEndDate ?? '',
+      status: r.status ?? '',
+      issueSize: Number(r.issueSize ?? 0),
+      issuePrice: String(r.issuePrice ?? ''),
+      noOfSharesOffered: Number(r.noOfSharesOffered ?? 0),
+    }));
+
+    const preOpen: IpoPreOpen[] = (preOpenRaw.data ?? []).map((r) => {
+      const book = r.preopenBook ?? {};
+      return {
+        symbol: r.symbol ?? '',
+        series: r.series ?? '',
+        prevClose: Number(r.prevClose ?? 0),
+        iep: Number(r.iep ?? 0),
+        change: Number(r.change ?? 0),
+        perChange: Number(r.perChange ?? 0),
+        status: r.status ?? '',
+        totalBuyQuantity: Number(book.totalBuyQuantity ?? 0),
+        totalSellQuantity: Number(book.totalSellQuantity ?? 0),
+        lastUpdateTime: book.lastUpdateTime ?? '',
+      };
+    });
+
+    const summary: IpoTrackerItem[] = (summaryRaw.data ?? []).map((r) => ({
+      symbol: r.SYMBOL ?? '',
+      companyName: r.COMPANYNAME ?? '',
+      listedOn: r.LISTED_ON ?? '',
+      issuePrice: Number(r.ISSUE_PRICE ?? 0),
+      listedDayClose: Number(r.LISTED_DAY_CLOSE ?? 0),
+      listedDayGain: Number(r.LISTED_DAY_GAIN ?? 0),
+      listedDayGainPer: Number(r.LISTED_DAY_GAIN_PER ?? 0),
+      ltp: Number(r.LTP ?? 0),
+      gainLoss: Number(r.GAIN_LOSS ?? 0),
+      gainLossPer: Number(r.GAIN_LOSS_PER ?? 0),
+      marketType: r.MARKETTYPE ?? '',
+    }));
+
+    return {
+      asOf: new Date().toISOString(),
+      current,
+      preOpen,
+      summary,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────
 
   private async getIndexQuote(symbol: string): Promise<QuoteData> {
@@ -1228,4 +1404,77 @@ interface NseLiveDerivativesResponse {
     marketOpenOrClose?: string;
     marketStatusMessage?: string;
   };
+}
+
+// ── Feature #6: index constituents (equity-stock-indices) ─────────────────
+
+interface NseStockIndicesRow {
+  symbol?: string;
+  previousClose?: number | string;
+  open?: number | string;
+  dayHigh?: number | string;
+  dayLow?: number | string;
+  lastPrice?: number | string;
+  change?: number | string;
+  pChange?: number | string;
+  totalTradedVolume?: number | string;
+  totalTradedValue?: number | string;
+}
+
+interface NseStockIndicesResponse {
+  data?: NseStockIndicesRow[];
+}
+
+// ── Feature #7: IPO tracker ────────────────────────────────────────────────
+
+interface NseIpoCurrentRow {
+  symbol?: string;
+  companyName?: string;
+  series?: string;
+  issueStartDate?: string;
+  issueEndDate?: string;
+  status?: string;
+  issueSize?: number | string;
+  issuePrice?: number | string;
+  noOfSharesOffered?: number | string;
+}
+
+// NSE returns the current-issue feed as a bare array.
+type NseIpoCurrentResponse = NseIpoCurrentRow[];
+
+interface NseIpoPreOpenRow {
+  symbol?: string;
+  series?: string;
+  prevClose?: number | string;
+  iep?: number | string;
+  change?: number | string;
+  perChange?: number | string;
+  status?: string;
+  preopenBook?: {
+    totalBuyQuantity?: number | string;
+    totalSellQuantity?: number | string;
+    lastUpdateTime?: string;
+  };
+}
+
+interface NseIpoPreOpenResponse {
+  data?: NseIpoPreOpenRow[];
+}
+
+interface NseIpoTrackerRow {
+  SYMBOL?: string;
+  COMPANYNAME?: string;
+  LISTED_ON?: string;
+  ISSUE_PRICE?: number | string;
+  LISTED_DAY_CLOSE?: number | string;
+  LISTED_DAY_GAIN?: number | string;
+  LISTED_DAY_GAIN_PER?: number | string;
+  LTP?: number | string;
+  GAIN_LOSS?: number | string;
+  GAIN_LOSS_PER?: number | string;
+  MARKETTYPE?: string;
+}
+
+interface NseIpoTrackerResponse {
+  data?: NseIpoTrackerRow[];
 }
