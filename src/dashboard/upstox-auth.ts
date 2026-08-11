@@ -14,7 +14,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { UpstoxProvider } from '../data/providers/upstox.provider.js';
 import { DASHBOARD_PORT } from '../data/constants/dashboard.js';
-import { ENV_PATH, UPSTOX_TOKEN_PATH } from '../utils/paths.js';
+import { ENV_PATH } from '../utils/paths.js';
+import { resolveTokenReadPath } from '../data/providers/upstox.provider.js';
 
 const REDIRECT_URI = `http://127.0.0.1:${DASHBOARD_PORT}/upstox/callback`;
 
@@ -111,9 +112,10 @@ export function getUpstoxStatus(): {
   //     token it auto-renews silently, so it counts as connected regardless.
   let connected = false;
   let canAutoRenew = false;
-  if (existsSync(UPSTOX_TOKEN_PATH)) {
+  const tokenPath = resolveTokenReadPath();
+  if (existsSync(tokenPath)) {
     try {
-      const raw = JSON.parse(readFileSync(UPSTOX_TOKEN_PATH, 'utf8')) as {
+      const raw = JSON.parse(readFileSync(tokenPath, 'utf8')) as {
         access_token?: string;
         refresh_token?: string;
         savedAt?: string;

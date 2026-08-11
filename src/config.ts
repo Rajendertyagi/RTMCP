@@ -13,7 +13,7 @@
 import { z } from 'zod';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ENV_PATH } from './utils/paths.js';
+import { ENV_PATH, LEGACY_HOME_CONFIG_DIR } from './utils/paths.js';
 
 // ── .env loading (git-ignored local secrets) ──────────────────────────────
 // Populate process.env from a local `.env` file (if present) WITHOUT overriding
@@ -22,14 +22,18 @@ import { ENV_PATH } from './utils/paths.js';
 //
 // The canonical `.env` lives in the shared config dir (see utils/paths.ts) so
 // the Claude tool and the Broker Setup dashboard always read the same file, no
-// matter which working directory either was launched from. A legacy `.env` in
-// the current working directory is still honoured as a fallback.
+// matter which working directory either was launched from. As READ fallbacks,
+// a legacy `.env` in the previous home folder (~/.rtmcp) and in the current
+// working directory are still honoured, so an existing setup keeps working
+// after the move to the portable (next-to-exe) layout — no re-entry of keys.
 function loadDotEnvFile(): void {
   if (process.env['VITEST'] || process.env['NODE_ENV'] === 'test') return;
 
   const candidates = [ENV_PATH];
+  const legacyEnv = join(LEGACY_HOME_CONFIG_DIR, '.env');
+  if (legacyEnv !== ENV_PATH) candidates.push(legacyEnv);
   const cwdEnv = join(process.cwd(), '.env');
-  if (cwdEnv !== ENV_PATH) candidates.push(cwdEnv);
+  if (cwdEnv !== ENV_PATH && cwdEnv !== legacyEnv) candidates.push(cwdEnv);
   const envPath = candidates.find((p) => existsSync(p));
   if (!envPath) return;
 

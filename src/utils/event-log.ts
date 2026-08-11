@@ -5,8 +5,9 @@
 //   • the MCP (Claude) process  → logs "ai" (Claude called a tool) + network/nse errors
 //   • the dashboard (web) process → logs "request" (the web page asked for data) + errors
 //
-// Both write to the SAME log file (in the user's home folder). The dashboard's
-// /api/logs endpoint reads that file, so the Logs view can show activity from
+// Both write to the SAME log file (next to the .exe, the portable config dir).
+// The dashboard's /api/logs endpoint reads that file, so the Logs view can show
+// activity from
 // whichever mode(s) are running — including whether Claude is hitting the tool.
 //
 // Design notes:
@@ -19,7 +20,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import { CONFIG_DIR } from './paths.js';
 
 export type LogCategory =
   | 'ai' // Claude (the AI) called a tool
@@ -42,7 +43,7 @@ export interface LogEntry {
 function resolveLogFile(): string {
   const fromEnv = process.env.LOG_FILE;
   if (fromEnv && fromEnv.trim()) return fromEnv.trim();
-  return path.join(os.homedir(), '.rtmcp', 'rtmcp.log');
+  return path.join(CONFIG_DIR, 'rtmcp.log');
 }
 
 /** Absolute path of the shared log file (also surfaced in the UI/setup guide). */

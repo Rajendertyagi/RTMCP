@@ -2,30 +2,45 @@
 // Canonical runtime paths
 //
 // Every user-specific file (the broker .env, the Upstox token, and the event
-// log in event-log.ts) lives under ONE fixed folder — by default ~/.rtmcp —
-// instead of the current working directory.
+// log in event-log.ts) lives under ONE fixed folder so the Claude / MCP tool
+// and the Broker Setup dashboard always share the same config.
 //
-// WHY this matters:
-//   Previously these files were resolved from process.cwd(). The Broker Setup
-//   dashboard (launched from one folder) and the Claude / MCP tool (launched
-//   from another) then read and wrote DIFFERENT files — so a connection made
-//   in the browser was saved somewhere the Claude tool never looked, and the
-//   tool silently fell back to NSE. A fixed home-folder location makes both
-//   processes share one config regardless of where either was launched.
+// DEFAULT — PORTABLE (next to the .exe):
+//   dirname(process.execPath). Drop the .exe (plus this tool's helper .bat
+//   files) into any folder and it just works — config, token and logs all live
+//   alongside it. Copy the folder anywhere and the whole setup moves with it.
 //
-// The folder can be overridden with the RTMCP_CONFIG_DIR env var (advanced).
+// Overrides / fallbacks:
+//   • RTMCP_CONFIG_DIR env var wins (advanced / fixed-location setups).
+//   • When run under Node/Bun directly (dev, not the compiled .exe) we keep the
+//     previous ~/.rtmcp home folder, so dev never writes into the runtime's
+//     install directory.
+//   • The legacy ~/.rtmcp folder is still READ as a fallback (see
+//     resolveTokenReadPath in upstox.provider.ts and loadDotEnvFile in
+//     config.ts) so an existing token / .env keeps working after the move —
+//     no forced re-login.
 // ────────────────────────────────────────────────────────────────────────────
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-/** Folder that holds all user-specific runtime files for this tool. */
+/** Legacy home-folder location, kept only as a READ fallback for existing setups. */
+export const LEGACY_HOME_CONFIG_DIR = path.join(os.homedir(), '.rtmcp');
+
+/**
+ * Folder that holds all user-specific runtime files for this tool.
+ * Portable by default: the folder containing the running executable.
+ */
 export const CONFIG_DIR: string = (() => {
   const fromEnv = process.env.RTMCP_CONFIG_DIR;
-  const dir = fromEnv && fromEnv.trim()
-    ? path.resolve(fromEnv.trim())
-    : path.join(os.homedir(), '.rtmcp');
+  if (fromEnv && fromEnv.trim()) return path.resolve(fromEnv.trim());
+
+  const exe = process.execPath;
+  const base = path.basename(exe).toLowerCase();
+  const isDev = base === 'node' || base === 'node.exe' || base === 'bun' || base === 'bun.exe';
+  // Compiled .exe → sit next to it (portable). Dev run → keep the home folder.
+  const dir = isDev ? LEGACY_HOME_CONFIG_DIR : path.dirname(exe);
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch {

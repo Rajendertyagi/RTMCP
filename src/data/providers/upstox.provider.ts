@@ -56,7 +56,7 @@ import { getLotSize } from '../constants/lot-sizes.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
-import { UPSTOX_TOKEN_PATH } from '../../utils/paths.js';
+import { UPSTOX_TOKEN_PATH, LEGACY_HOME_CONFIG_DIR } from '../../utils/paths.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -64,12 +64,16 @@ const UPSTOX_BASE = 'https://api.upstox.com/v2';
 const TOKEN_FILE = UPSTOX_TOKEN_PATH;
 
 /**
- * Resolve which token file to READ: prefer the shared config-dir token, but
- * fall back to a legacy token in the current working directory so pre-dashboard
- * setups keep working. Writes always go to {@link TOKEN_FILE}.
+ * Resolve which token file to READ: prefer the shared config-dir token, then a
+ * legacy token in the previous home folder (~/.rtmcp), then one in the current
+ * working directory — so an existing setup keeps working after the move to the
+ * portable (next-to-exe) layout, with no forced re-login. Writes always go to
+ * {@link TOKEN_FILE}.
  */
-function resolveTokenReadPath(): string {
+export function resolveTokenReadPath(): string {
   if (existsSync(TOKEN_FILE)) return TOKEN_FILE;
+  const legacy = join(LEGACY_HOME_CONFIG_DIR, '.upstox-token.json');
+  if (legacy !== TOKEN_FILE && existsSync(legacy)) return legacy;
   const cwd = join(process.cwd(), '.upstox-token.json');
   return cwd !== TOKEN_FILE && existsSync(cwd) ? cwd : TOKEN_FILE;
 }
