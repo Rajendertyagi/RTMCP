@@ -205,12 +205,28 @@ interface UpstoxTokenResponse {
 
 // ── Provider ──────────────────────────────────────────────────────────────
 
+/** Live, in-memory token cache. Updated by `saveToken` so a re-login or a
+ *  silent refresh while the server is already running takes effect immediately
+ *  (no restart). Previously the token was an instance field set once at
+ *  startup, so a fresh login left the instance using a stale, expired token
+ *  and every request 401'd. */
+let activeAccessToken: string | null = null;
+let activeRefreshToken: string | null = null;
+
 export class UpstoxProvider extends BaseProvider {
   readonly name = 'upstox';
 
   private apiKey: string;
   private apiSecret: string;
-  private accessToken: string;
+
+  /** Current access token, backed by the module-level `activeAccessToken` so a
+   *  re-login or silent refresh updates the live token without a restart. */
+  private get accessToken(): string {
+    return activeAccessToken ?? '';
+  }
+  private set accessToken(value: string) {
+    activeAccessToken = value || null;
+  }
 
   /** Internal NSE scraper used as fallback for the reports Upstox lacks. */
   private fallback: NSEProvider;
@@ -336,6 +352,12 @@ export class UpstoxProvider extends BaseProvider {
         }),
         'utf8',
       );
+
+      // Keep the live, in-memory token in sync so a one-time login (or silent
+      // refresh) performed while the server is already running takes effect at
+      // once — no restart required.
+      activeAccessToken = token;
+      activeRefreshToken = (refreshToken ?? existingRefresh ?? '') || null;
     } catch (err) {
       console.error('[Upstox] Could not persist token file:', String(err));
     }
