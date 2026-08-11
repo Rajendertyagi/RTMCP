@@ -173,6 +173,7 @@ interface UpstoxMarketStatusResponse {
 
 interface UpstoxTokenResponse {
   access_token?: string;
+  refresh_token?: string;
   error?: string;
   error_description?: string;
 }
@@ -275,19 +276,99 @@ export class UpstoxProvider extends BaseProvider {
       );
     }
 
-    UpstoxProvider.saveToken(json.access_token);
+    UpstoxProvider.saveToken(json.access_token, json.refresh_token);
+    if (!json.refresh_token) {
+      console.error(
+        '[Upstox] WARNING: Upstox did not return a refresh_token. ' +
+          'Automatic daily renewal will NOT work — you would have to re-login each day ' +
+          'or switch to TOTP. Check that your Upstox app is approved for offline/refresh access.',
+      );
+    }
     return json.access_token;
   }
 
-  private static saveToken(token: string): void {
+  private static saveToken(token: string, refreshToken?: string): void {
     try {
+      // Preserve an existing refresh token when a refresh only returns a new
+      // access token (Upstox sometimes omits refresh_token on renewal).
+      let existingRefresh: string | undefined;
+      if (existsSync(TOKEN_FILE)) {
+        try {
+          const raw = JSON.parse(readFileSync(TOKEN_FILE, 'utf8')) as {
+            refresh_token?: string;
+          };
+          existingRefresh = raw.refresh_token;
+        } catch {
+          // ignore corrupt file
+        }
+      }
       writeFileSync(
         TOKEN_FILE,
-        JSON.stringify({ access_token: token, savedAt: new Date().toISOString() }),
+        JSON.stringify({
+          access_token: token,
+          refresh_token: refreshToken ?? existingRefresh ?? '',
+          savedAt: new Date().toISOString(),
+        }),
         'utf8',
       );
     } catch (err) {
       console.error('[Upstox] Could not persist token file:', String(err));
+    }
+  }
+
+  /**
+   * Silently mint a new access token using the stored refresh token. This is
+   * what removes the daily manual login: when the access token expires (~24h)
+   * the tool renews itself. No broker password or PIN is ever read or stored.
+   * Returns true if a new access token was obtained.
+   */
+  private async refreshAccessToken(): Promise<boolean> {
+    const tokenPath = resolveTokenReadPath();
+    if (!existsSync(tokenPath)) return false;
+
+    let refreshToken: string | undefined;
+    try {
+      const raw = JSON.parse(readFileSync(tokenPath, 'utf8')) as {
+        refresh_token?: string;
+      };
+      refreshToken = raw.refresh_token;
+    } catch {
+      return false;
+    }
+    if (!refreshToken) return false;
+
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: this.apiKey,
+      client_secret: this.apiSecret,
+    });
+
+    try {
+      const res = await fetch(`${UPSTOX_BASE}/login/authorization/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: body.toString(),
+      });
+      const json = (await res.json().catch(() => ({}))) as UpstoxTokenResponse;
+      if (!res.ok || !json.access_token) {
+        console.error(
+          '[Upstox] Refresh failed — token may be revoked. Re-do the one-time login.',
+          json.error ?? json.error_description ?? res.status,
+        );
+        return false;
+      }
+      // Upstox may rotate the refresh token on renewal; persist whatever it returns.
+      UpstoxProvider.saveToken(json.access_token, json.refresh_token);
+      this.accessToken = json.access_token;
+      console.error('[Upstox] Access token auto-renewed via refresh token.');
+      return true;
+    } catch (err) {
+      console.error('[Upstox] Refresh request error:', String(err));
+      return false;
     }
   }
 
@@ -306,6 +387,25 @@ export class UpstoxProvider extends BaseProvider {
         if (raw.access_token) this.accessToken = raw.access_token;
       } catch {
         // ignore corrupt token file
+      }
+    }
+
+    // Proactively renew if the stored access token is older than ~23h (it
+    // expires after ~24h). This way the first call of the day doesn't have to
+    // fail once before the silent refresh kicks in.
+    if (this.accessToken && tokenPath && existsSync(tokenPath)) {
+      try {
+        const raw = JSON.parse(readFileSync(tokenPath, 'utf8')) as {
+          savedAt?: string;
+        };
+        if (raw.savedAt) {
+          const ageMs = Date.now() - new Date(raw.savedAt).getTime();
+          if (ageMs > 23 * 60 * 60 * 1_000) {
+            await this.refreshAccessToken();
+          }
+        }
+      } catch {
+        // ignore; a stale token will surface as a 401 and be retried below
       }
     }
 
@@ -357,6 +457,7 @@ export class UpstoxProvider extends BaseProvider {
   private async upstoxFetchInner<T>(
     path: string,
     options?: { params?: Record<string, string> },
+    attempt = 1,
   ): Promise<T> {
     const elapsed = Date.now() - this.lastRequestAt;
     if (elapsed < MIN_REQUEST_GAP_MS) {
@@ -383,6 +484,12 @@ export class UpstoxProvider extends BaseProvider {
       });
 
       if (res.status === 401 || res.status === 403) {
+        if (attempt <= 1) {
+          const renewed = await this.refreshAccessToken();
+          if (renewed) {
+            return this.upstoxFetchInner<T>(path, options, attempt + 1);
+          }
+        }
         throw new Error(
           `[Upstox] Authentication failed (${res.status}). ` +
             'Access token may have expired — re-run the one-time login.',
