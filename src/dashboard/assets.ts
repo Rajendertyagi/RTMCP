@@ -71,6 +71,16 @@ tr.cat-short td:first-child { border-left: 3px solid var(--neg); }
 tr.cat-unwind td:first-child { border-left: 3px solid #e67e22; }
 tr.cat-cover td:first-child { border-left: 3px solid #3498db; }
 tr.cat-neutral td:first-child { border-left: 3px solid var(--muted); }
+.chain-summary { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 10px 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; font-size: 13px; }
+.chain-summary .cs-sym { font-size: 15px; font-weight: 700; }
+.chain-summary b { color: var(--text); }
+.chain-scroll { overflow-x: auto; }
+table.chain th, table.chain td { padding: 6px 8px; font-size: 12px; text-align: right; white-space: nowrap; }
+table.chain th.call-h { color: var(--pos); }
+table.chain th.put-h { color: var(--neg); }
+table.chain th.strike-h, table.chain td.strike { text-align: center; background: var(--panel2); font-weight: 700; }
+table.chain tr.atm { background: rgba(127, 182, 255, 0.08); }
+table.chain td.empty { color: var(--muted); }
 .hint { margin-top: 14px; }
 .warn-text { color: #f0a85a; }
 .log-filter {
@@ -239,6 +249,7 @@ function render(body) {
     return;
   }
   statusLine.textContent = 'OK';
+  if (isOptionChain(body.data)) { renderOptionChain(body.data); return; }
   var rows = extractRows(body.data);
   if (rows === null) {
     renderKeyValue(body.data);
@@ -254,7 +265,7 @@ function render(body) {
 function extractRows(data) {
   if (Array.isArray(data)) return data;
   if (data && typeof data === 'object') {
-    var keys = ['contracts', 'items', 'entries', 'data', 'results', 'constituents'];
+    var keys = ['contracts', 'items', 'entries', 'data', 'results', 'constituents', 'rows'];
     for (var i = 0; i < keys.length; i++) {
       if (Array.isArray(data[keys[i]])) return data[keys[i]];
     }
@@ -322,6 +333,93 @@ function renderKeyValue(data) {
     html += '<tr><th>' + escapeHtml(k) + '</th><td>' + escapeHtml(cellText(data[k])) + '</td></tr>';
   }
   html += '</tbody></table>';
+  output.innerHTML = html;
+}
+
+function fmtInt(v) {
+  if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '-';
+  try { return Math.round(v).toLocaleString('en-IN'); } catch (e) { return String(Math.round(v)); }
+}
+function fmtPrice(v) {
+  if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '-';
+  try { return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  catch (e) { return Number(v).toFixed(2); }
+}
+function isOptionChain(data) {
+  return !!(data && Array.isArray(data.rows) && Array.isArray(data.strikePrices));
+}
+function renderOptionChain(data) {
+  var rows = (data.rows || []);
+  // Highlight the At-The-Money strike (closest to the underlying spot).
+  var spot = data.underlyingValue || 0;
+  var atm = null, best = Infinity;
+  for (var i = 0; i < rows.length; i++) {
+    var d = Math.abs(rows[i].strikePrice - spot);
+    if (d < best) { best = d; atm = rows[i].strikePrice; }
+  }
+  // Call columns (left→right) and Put columns (left→right), strike in the middle.
+  var callCols = [
+    { k: 'openInterest', l: 'OI', int: true },
+    { k: 'changeinOpenInterest', l: 'Chg OI', int: true, color: true },
+    { k: 'totalTradedVolume', l: 'Vol', int: true },
+    { k: 'impliedVolatility', l: 'IV', dec: 2 },
+    { k: 'lastPrice', l: 'LTP', dec: 2 },
+    { k: 'delta', l: 'Δ', dec: 2 },
+    { k: 'gamma', l: 'Γ', dec: 4 },
+    { k: 'theta', l: 'Θ', dec: 2 },
+    { k: 'vega', l: 'V', dec: 2 },
+    { k: 'bidPrice', l: 'Bid', dec: 2 },
+    { k: 'askPrice', l: 'Ask', dec: 2 }
+  ];
+  var putCols = [
+    { k: 'bidPrice', l: 'Bid', dec: 2 },
+    { k: 'askPrice', l: 'Ask', dec: 2 },
+    { k: 'delta', l: 'Δ', dec: 2 },
+    { k: 'gamma', l: 'Γ', dec: 4 },
+    { k: 'theta', l: 'Θ', dec: 2 },
+    { k: 'vega', l: 'V', dec: 2 },
+    { k: 'impliedVolatility', l: 'IV', dec: 2 },
+    { k: 'lastPrice', l: 'LTP', dec: 2 },
+    { k: 'totalTradedVolume', l: 'Vol', int: true },
+    { k: 'changeinOpenInterest', l: 'Chg OI', int: true, color: true },
+    { k: 'openInterest', l: 'OI', int: true }
+  ];
+  function cellHtml(leg, col) {
+    if (!leg) return '<td class="empty">-</td>';
+    var v = leg[col.k];
+    var cls = '';
+    if (col.color && typeof v === 'number') cls = v >= 0 ? ' class="pos"' : ' class="neg"';
+    var txt;
+    if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) txt = '-';
+    else if (col.int) txt = fmtInt(v);
+    else txt = fmtPrice(v);
+    return '<td' + cls + '>' + escapeHtml(txt) + '</td>';
+  }
+  var html = '<div class="chain-summary">'
+    + '<span class="cs-sym">' + escapeHtml(data.symbol) + '</span>'
+    + '<span>Spot <b>' + fmtPrice(data.underlyingValue) + '</b></span>'
+    + '<span>Expiry <b>' + escapeHtml(data.expiryDate) + '</b></span>'
+    + '<span>CE OI <b>' + fmtInt(data.totalCEOpenInterest) + '</b></span>'
+    + '<span>PE OI <b>' + fmtInt(data.totalPEOpenInterest) + '</b></span>'
+    + '<span>CE Vol <b>' + fmtInt(data.totalCEVolume) + '</b></span>'
+    + '<span>PE Vol <b>' + fmtInt(data.totalPEVolume) + '</b></span>'
+    + '<span class="muted">as of ' + escapeHtml(formatTs(data.timestamp)) + '</span>'
+    + '</div>';
+  html += '<div class="chain-scroll"><table class="chain"><thead><tr>';
+  for (var c = 0; c < callCols.length; c++) html += '<th class="call-h">' + callCols[c].l + '</th>';
+  html += '<th class="strike-h">Strike</th>';
+  for (var c2 = 0; c2 < putCols.length; c2++) html += '<th class="put-h">' + putCols[c2].l + '</th>';
+  html += '</tr></thead><tbody>';
+  for (var r = 0; r < rows.length; r++) {
+    var row = rows[r];
+    var atmCls = (row.strikePrice === atm) ? ' class="atm"' : '';
+    html += '<tr' + atmCls + '>';
+    for (var c = 0; c < callCols.length; c++) html += cellHtml(row.CE, callCols[c]);
+    html += '<td class="strike">' + escapeHtml(fmtInt(row.strikePrice)) + '</td>';
+    for (var c2 = 0; c2 < putCols.length; c2++) html += cellHtml(row.PE, putCols[c2]);
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
   output.innerHTML = html;
 }
 

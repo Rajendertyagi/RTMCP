@@ -822,6 +822,10 @@ export class UpstoxProvider extends BaseProvider {
       // size) to match the OI unit and NSE's "Volume (Contracts)" column.
       totalTradedVolume: md?.volume ? Math.round(md.volume / (lotSize > 0 ? lotSize : 1)) : 0,
       impliedVolatility: greeks?.iv ?? 0,
+      delta: greeks?.delta,
+      gamma: greeks?.gamma,
+      theta: greeks?.theta,
+      vega: greeks?.vega,
       bidQty: md?.bid_qty ?? 0,
       bidPrice: md?.bid_price ?? 0,
       askQty: md?.ask_qty ?? 0,

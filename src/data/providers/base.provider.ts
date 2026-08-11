@@ -18,6 +18,12 @@ export interface OptionData {
   changeinOpenInterest: number;
   totalTradedVolume: number;
   impliedVolatility: number;
+  // Option Greeks (Upstox provides all of these; optional because other
+  // providers may not return them).
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
   bidQty: number;
   bidPrice: number;
   askQty: number;
