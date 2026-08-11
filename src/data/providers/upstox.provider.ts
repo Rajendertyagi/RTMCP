@@ -25,6 +25,7 @@ import {
   OptionChainData,
   OptionChainRow,
   OptionData,
+  BuildupCategory,
   QuoteData,
   MarketStatus,
   CandleData,
@@ -791,6 +792,27 @@ export class UpstoxProvider extends BaseProvider {
     };
   }
 
+  /**
+   * Classify a single option leg's activity into one of the four OI-vs-price
+   * buildup states (plus Neutral). Upstox gives the raw day change in OI and the
+   * day change in price; the rest is the standard 2×2:
+   *   OI up   + price up   → Long Buildup
+   *   OI up   + price down → Short Buildup
+   *   OI down + price down → Long Unwinding
+   *   OI down + price up   → Short Covering
+   */
+  private classifyBuildup(oiChange: number, priceChange: number): BuildupCategory {
+    const oiUp = oiChange > 0;
+    const oiDown = oiChange < 0;
+    const pxUp = priceChange > 0;
+    const pxDown = priceChange < 0;
+    if (oiUp && pxUp) return 'Long Buildup';
+    if (oiUp && pxDown) return 'Short Buildup';
+    if (oiDown && pxDown) return 'Long Unwinding';
+    if (oiDown && pxUp) return 'Short Covering';
+    return 'Neutral';
+  }
+
   private mapLeg(
     leg: UpstoxOptionLeg | undefined,
     type: 'CE' | 'PE',
@@ -809,6 +831,11 @@ export class UpstoxProvider extends BaseProvider {
     const pChange = prevClose > 0 && ltp > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
     const oi = md?.oi ?? 0;
     const prevOi = md?.prev_oi ?? 0;
+    const oiChange = oi - prevOi;
+    // OI change as a % of previous OI (Opstra's "Vol OI chg %" column).
+    const oiChangePct = prevOi > 0 ? (oiChange / prevOi) * 100 : 0;
+    // Per-leg buildup tag from the OI-vs-price matrix.
+    const buildTag = this.classifyBuildup(oiChange, change);
     return {
       strikePrice: parentStrike,
       expiryDate,
@@ -817,7 +844,7 @@ export class UpstoxProvider extends BaseProvider {
       change,
       pChange,
       openInterest: oi,
-      changeinOpenInterest: oi - prevOi,
+      changeinOpenInterest: oiChange,
       // Upstox returns option `volume` in shares; convert to contracts (÷ lot
       // size) to match the OI unit and NSE's "Volume (Contracts)" column.
       totalTradedVolume: md?.volume ? Math.round(md.volume / (lotSize > 0 ? lotSize : 1)) : 0,
@@ -831,6 +858,8 @@ export class UpstoxProvider extends BaseProvider {
       askQty: md?.ask_qty ?? 0,
       askPrice: md?.ask_price ?? 0,
       underlyingValue,
+      oiChangePct,
+      buildTag,
     };
   }
 

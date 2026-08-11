@@ -81,6 +81,12 @@ table.chain th.put-h { color: var(--neg); }
 table.chain th.strike-h, table.chain td.strike { text-align: center; background: var(--panel2); font-weight: 700; }
 table.chain tr.atm { background: rgba(127, 182, 255, 0.08); }
 table.chain td.empty { color: var(--muted); }
+table.chain td.tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+table.chain td.cat-long { color: var(--pos); }
+table.chain td.cat-short { color: var(--neg); }
+table.chain td.cat-unwind { color: #e67e22; }
+table.chain td.cat-cover { color: #3498db; }
+table.chain td.cat-neutral { color: var(--muted); }
 .hint { margin-top: 14px; }
 .warn-text { color: #f0a85a; }
 .log-filter {
@@ -345,6 +351,10 @@ function fmtPrice(v) {
   try { return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   catch (e) { return Number(v).toFixed(2); }
 }
+function fmtPct(v) {
+  if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '-';
+  return (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+}
 function isOptionChain(data) {
   return !!(data && Array.isArray(data.rows) && Array.isArray(data.strikePrices));
 }
@@ -361,15 +371,18 @@ function renderOptionChain(data) {
   var callCols = [
     { k: 'openInterest', l: 'OI', int: true },
     { k: 'changeinOpenInterest', l: 'Chg OI', int: true, color: true },
+    { k: 'oiChangePct', l: 'OI %', pct: true, color: true },
     { k: 'totalTradedVolume', l: 'Vol', int: true },
     { k: 'impliedVolatility', l: 'IV', dec: 2 },
     { k: 'lastPrice', l: 'LTP', dec: 2 },
+    { k: 'pChange', l: 'LTP %', pct: true, color: true },
     { k: 'delta', l: 'Δ', dec: 2 },
     { k: 'gamma', l: 'Γ', dec: 4 },
     { k: 'theta', l: 'Θ', dec: 2 },
     { k: 'vega', l: 'V', dec: 2 },
     { k: 'bidPrice', l: 'Bid', dec: 2 },
-    { k: 'askPrice', l: 'Ask', dec: 2 }
+    { k: 'askPrice', l: 'Ask', dec: 2 },
+    { k: 'buildTag', l: 'Build', build: true }
   ];
   var putCols = [
     { k: 'bidPrice', l: 'Bid', dec: 2 },
@@ -380,18 +393,26 @@ function renderOptionChain(data) {
     { k: 'vega', l: 'V', dec: 2 },
     { k: 'impliedVolatility', l: 'IV', dec: 2 },
     { k: 'lastPrice', l: 'LTP', dec: 2 },
+    { k: 'pChange', l: 'LTP %', pct: true, color: true },
     { k: 'totalTradedVolume', l: 'Vol', int: true },
     { k: 'changeinOpenInterest', l: 'Chg OI', int: true, color: true },
-    { k: 'openInterest', l: 'OI', int: true }
+    { k: 'oiChangePct', l: 'OI %', pct: true, color: true },
+    { k: 'openInterest', l: 'OI', int: true },
+    { k: 'buildTag', l: 'Build', build: true }
   ];
   function cellHtml(leg, col) {
     if (!leg) return '<td class="empty">-</td>';
     var v = leg[col.k];
+    if (col.build) {
+      if (!v) return '<td class="empty">-</td>';
+      return '<td class="tag ' + categoryClass(v) + '">' + escapeHtml(v) + '</td>';
+    }
     var cls = '';
     if (col.color && typeof v === 'number') cls = v >= 0 ? ' class="pos"' : ' class="neg"';
     var txt;
     if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) txt = '-';
     else if (col.int) txt = fmtInt(v);
+    else if (col.pct) txt = fmtPct(v);
     else txt = fmtPrice(v);
     return '<td' + cls + '>' + escapeHtml(txt) + '</td>';
   }

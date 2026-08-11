@@ -6,6 +6,14 @@
 
 // ── Inline model types (mirrors src/data/models/*) ─────────────────────────
 
+/** OI-vs-price buildup classification for a single option leg / contract. */
+export type BuildupCategory =
+  | 'Long Buildup'
+  | 'Short Buildup'
+  | 'Long Unwinding'
+  | 'Short Covering'
+  | 'Neutral';
+
 /** Single leg of an option (CE or PE) */
 export interface OptionData {
   strikePrice: number;
@@ -29,6 +37,9 @@ export interface OptionData {
   askQty: number;
   askPrice: number;
   underlyingValue: number;
+  // Derived analytics (Upstox populates these; optional for other providers):
+  oiChangePct?: number;          // OI change as % of previous OI (Opstra "Vol OI chg %")
+  buildTag?: BuildupCategory;    // Long/Short Buildup, Long Unwinding, Short Covering, Neutral
 }
 
 /** One strike row containing both CE and PE sides */
