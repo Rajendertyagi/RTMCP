@@ -95,6 +95,7 @@ export async function completeUpstoxAuth(code: string): Promise<void> {
 export function getUpstoxStatus(): {
   configured: boolean;
   connected: boolean;
+  canAutoRenew: boolean;
   redirectUri: string;
 } {
   const env = readEnv();
@@ -102,6 +103,37 @@ export function getUpstoxStatus(): {
     env['DATA_PROVIDER'] === 'upstox' &&
     !!env['UPSTOX_API_KEY'] &&
     !!env['UPSTOX_API_SECRET'];
-  const connected = existsSync(UPSTOX_TOKEN_PATH);
-  return { configured, connected, redirectUri: REDIRECT_URI };
+
+  // A stale token file can linger after the token expires, which made the old
+  // "Connected: Yes" status misleading. Now we actually inspect the file:
+  //   • a usable access token must be present, and
+  //   • without a refresh token it must still be fresh (<24h); with a refresh
+  //     token it auto-renews silently, so it counts as connected regardless.
+  let connected = false;
+  let canAutoRenew = false;
+  if (existsSync(UPSTOX_TOKEN_PATH)) {
+    try {
+      const raw = JSON.parse(readFileSync(UPSTOX_TOKEN_PATH, 'utf8')) as {
+        access_token?: string;
+        refresh_token?: string;
+        savedAt?: string;
+      };
+      const hasAccess = !!raw.access_token && raw.access_token.trim().length > 0;
+      if (hasAccess) {
+        canAutoRenew = !!raw.refresh_token && raw.refresh_token.trim().length > 0;
+        if (canAutoRenew) {
+          connected = true; // can silently renew past the 24h boundary
+        } else {
+          const fresh =
+            raw.savedAt
+              ? Date.now() - new Date(raw.savedAt).getTime() < 24 * 60 * 60 * 1000
+              : false;
+          connected = fresh;
+        }
+      }
+    } catch {
+      // corrupt token file → treat as not connected
+    }
+  }
+  return { configured, connected, canAutoRenew, redirectUri: REDIRECT_URI };
 }

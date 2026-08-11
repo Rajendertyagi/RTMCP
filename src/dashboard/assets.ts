@@ -159,7 +159,7 @@ export const INDEX_HTML = `
       <button id="refreshBtn" class="refresh">Refresh</button>
     </div>
     <div id="output" class="output"></div>
-    <p id="globalHint" class="hint muted">Data is fetched live from NSE. First load may take a moment. Green = up, red = down. OI-vs-Price rows are color-coded by buildup type.</p>
+    <p id="globalHint" class="hint muted">Data is fetched live from Upstox. First load may take a moment. Green = up, red = down. OI-vs-Price rows are color-coded by buildup type.</p>
   </main>
 </div>
 <script src="/app.js"></script>
@@ -514,6 +514,7 @@ function refreshUpstoxStatus(done) {
       var d = b.data;
       var html = '<p>Configured: <b class="' + (d.configured ? 'status-ok' : 'status-bad') + '">' + (d.configured ? 'Yes' : 'No') + '</b></p>' +
         '<p>Connected: <b class="' + (d.connected ? 'status-ok' : 'status-bad') + '">' + (d.connected ? 'Yes' : 'No') + '</b></p>' +
+        '<p>Auto-renews daily: <b class="' + (d.canAutoRenew ? 'status-ok' : 'status-bad') + '">' + (d.canAutoRenew ? 'Yes' : 'No') + '</b></p>' +
         '<p class="muted">Redirect URI: ' + d.redirectUri + '</p>';
       var el = document.getElementById('upStatus');
       if (el) el.innerHTML = html;
