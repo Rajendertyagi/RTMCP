@@ -13,12 +13,41 @@ import { handleApi } from './router.js';
 import { DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_URL } from '../data/constants/dashboard.js';
 import { INDEX_HTML, APP_JS, STYLES_CSS } from './assets.js';
 import { logRequest, logError, logInfo } from '../utils/event-log.js';
+import type { DataProvider } from '../data/providers/base.provider.js';
 import {
   saveUpstoxCredentials,
   beginUpstoxAuth,
   completeUpstoxAuth,
   getUpstoxStatus,
 } from './upstox-auth.js';
+
+// ── Lazy provider initialization (mirrors the MCP server's ensureProvider) ──
+// The provider must be initialized (Upstox token loaded, NSE fallback warmed)
+// before any data route runs. We do it lazily + fire-and-forget so the server
+// starts instantly and the first data request triggers the (slow) init.
+// Without this, every /api data call runs on an uninitialized provider →
+// Upstox returns 401 (no token) and the NSE fallback has no cookies → all
+// dashboard views come back empty even though the UI itself loads fine.
+let dashboardProviderReady = false;
+let dashboardProviderInit: Promise<void> | null = null;
+
+async function ensureDashboardProvider(provider: DataProvider): Promise<void> {
+  if (dashboardProviderReady) return;
+  if (!dashboardProviderInit) {
+    dashboardProviderInit = provider
+      .initialize()
+      .then(() => {
+        dashboardProviderReady = true;
+        console.error('[Dashboard] Data provider initialized.');
+      })
+      .catch((err) => {
+        dashboardProviderInit = null; // allow a retry on the next request
+        console.error('[Dashboard] Provider init failed:', String(err));
+        throw err;
+      });
+  }
+  await dashboardProviderInit;
+}
 
 interface StaticAsset {
   body: string;
@@ -140,6 +169,30 @@ async function handleCallback(res: http.ServerResponse, code: string | null): Pr
 export async function startDashboard(): Promise<void> {
   const provider = createDataProvider();
 
+  // Lazily initialize the provider (loads the Upstox token, warms NSE cookies)
+  // so the server starts instantly and the first data request triggers init.
+  let providerReady = false;
+  let providerInit: Promise<void> | null = null;
+  const ensureDashboardProviderInit = (): Promise<void> => {
+    if (providerReady) return Promise.resolve();
+    if (!providerInit) {
+      providerInit = provider
+        .initialize()
+        .then(() => {
+          providerReady = true;
+          console.error('[Dashboard] Data provider initialized: ' + (provider as { name?: string }).name);
+        })
+        .catch((err) => {
+          providerInit = null; // allow a retry on the next request
+          console.error('[Dashboard] Provider init failed:', String(err));
+          throw err;
+        });
+    }
+    return providerInit;
+  };
+  // Warm in the background without blocking startup.
+  ensureDashboardProviderInit().catch(() => undefined);
+
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', DASHBOARD_URL);
@@ -161,6 +214,9 @@ export async function startDashboard(): Promise<void> {
         // Log activity (skip the self-referential logs poll to avoid noise).
         if (pathname !== '/api/logs') {
           logRequest(`Dashboard request: ${pathname}`);
+          // Ensure the provider is initialized before serving data (loads token,
+          // warms NSE cookies). The /api/logs route doesn't need the provider.
+          await ensureDashboardProviderInit();
         }
         const { status, body } = await handleApi(pathname, url.searchParams, provider);
         if (
