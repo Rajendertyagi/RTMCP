@@ -51,6 +51,7 @@ import {
   LotSizesResult,
 } from './base.provider.js';
 import { NSEProvider } from './nse.provider.js';
+import { getLotSize } from '../constants/lot-sizes.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
@@ -688,6 +689,9 @@ export class UpstoxProvider extends BaseProvider {
     expiryDate?: string,
   ): Promise<OptionChainData> {
     const underlyingKey = await this.resolveKey(symbol);
+    // Upstox reports option `volume` in shares but `oi` in contracts. Convert
+    // volume to contracts (÷ lot size) so the chain matches NSE's convention.
+    const lotSize = getLotSize(symbol);
 
     let targetExpiry = expiryDate;
     if (!targetExpiry) {
@@ -741,6 +745,7 @@ export class UpstoxProvider extends BaseProvider {
         strike,
         targetExpiry,
         underlyingValue,
+        lotSize,
       );
       const pe = this.mapLeg(
         item.put_options,
@@ -748,6 +753,7 @@ export class UpstoxProvider extends BaseProvider {
         strike,
         targetExpiry,
         underlyingValue,
+        lotSize,
       );
 
       const row: OptionChainRow = {
@@ -791,6 +797,7 @@ export class UpstoxProvider extends BaseProvider {
     parentStrike: number,
     expiryDate: string,
     underlyingValue: number,
+    lotSize: number,
   ): OptionData | undefined {
     if (!leg) return undefined;
     // Upstox v2 nests prices under `market_data` and greeks under `option_greeks`.
@@ -811,7 +818,9 @@ export class UpstoxProvider extends BaseProvider {
       pChange,
       openInterest: oi,
       changeinOpenInterest: oi - prevOi,
-      totalTradedVolume: md?.volume ?? 0,
+      // Upstox returns option `volume` in shares; convert to contracts (÷ lot
+      // size) to match the OI unit and NSE's "Volume (Contracts)" column.
+      totalTradedVolume: md?.volume ? Math.round(md.volume / (lotSize > 0 ? lotSize : 1)) : 0,
       impliedVolatility: greeks?.iv ?? 0,
       bidQty: md?.bid_qty ?? 0,
       bidPrice: md?.bid_price ?? 0,
