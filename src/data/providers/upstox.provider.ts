@@ -121,26 +121,34 @@ interface UpstoxQuoteResponse {
 
 interface UpstoxOptionLeg {
   instrument_key?: string;
-  last_price?: number;
-  net_change?: number;
-  oi?: number;
-  volume?: number;
-  bid_price?: number;
-  bid_qty?: number;
-  ask_price?: number;
-  ask_qty?: number;
-  iv?: number;
-  strike_price?: number;
-  expiry?: string;
-  option_type?: string;
-  underlying_key?: string;
-  underlying_spot_price?: number;
-  lot_size?: number;
-  tick_size?: number;
+  // Upstox v2 nests price data under `market_data` and greeks under `option_greeks`.
+  market_data?: {
+    ltp?: number;
+    volume?: number;
+    oi?: number;
+    close_price?: number;
+    bid_price?: number;
+    bid_qty?: number;
+    ask_price?: number;
+    ask_qty?: number;
+    prev_oi?: number;
+  };
+  option_greeks?: {
+    iv?: number;
+    delta?: number;
+    theta?: number;
+    gamma?: number;
+    vega?: number;
+    pop?: number;
+  };
 }
 
 interface UpstoxOptionChainItem {
   strike_price?: number;
+  underlying_spot_price?: number;
+  underlying_key?: string;
+  expiry?: string;
+  pcr?: number;
   call_options?: UpstoxOptionLeg;
   put_options?: UpstoxOptionLeg;
 }
@@ -181,7 +189,11 @@ interface UpstoxCandleResponse {
 
 interface UpstoxMarketStatusResponse {
   status?: string;
-  data?: Array<{ exchange?: string; status?: string }>;
+  // Upstox v2 returns `data` as a single MarketStatusData object, but accept an
+  // array too in case the endpoint is ever keyed per-exchange.
+  data?:
+    | { exchange?: string; status?: string; last_updated?: number }
+    | Array<{ exchange?: string; status?: string; last_updated?: number }>;
 }
 
 interface UpstoxTokenResponse {
@@ -673,11 +685,8 @@ export class UpstoxProvider extends BaseProvider {
     const items: UpstoxOptionChainItem[] = Array.isArray(payload)
       ? payload
       : payload?.data ?? [];
-    const underlyingValue =
-      (!Array.isArray(payload) ? payload?.underlying_spot_price : undefined) ??
-      items[0]?.call_options?.underlying_spot_price ??
-      items[0]?.put_options?.underlying_spot_price ??
-      0;
+    // Upstox puts `underlying_spot_price` on each strike row (OptionStrikeData).
+    const underlyingValue = items[0]?.underlying_spot_price ?? 0;
 
     if (items.length === 0) {
       console.error(
@@ -755,22 +764,31 @@ export class UpstoxProvider extends BaseProvider {
     underlyingValue: number,
   ): OptionData | undefined {
     if (!leg) return undefined;
+    // Upstox v2 nests prices under `market_data` and greeks under `option_greeks`.
+    const md = leg.market_data;
+    const greeks = leg.option_greeks;
+    const ltp = md?.ltp ?? 0;
+    const prevClose = md?.close_price ?? 0;
+    const change = prevClose > 0 ? ltp - prevClose : 0;
+    const pChange = prevClose > 0 && ltp > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
+    const oi = md?.oi ?? 0;
+    const prevOi = md?.prev_oi ?? 0;
     return {
-      strikePrice: leg.strike_price ?? parentStrike,
-      expiryDate: leg.expiry ?? expiryDate,
+      strikePrice: parentStrike,
+      expiryDate,
       optionType: type,
-      lastPrice: leg.last_price ?? 0,
-      change: leg.net_change ?? 0,
-      pChange: 0, // Upstox chain legs don't expose previous close
-      openInterest: leg.oi ?? 0,
-      changeinOpenInterest: 0,
-      totalTradedVolume: leg.volume ?? 0,
-      impliedVolatility: leg.iv ?? 0,
-      bidQty: leg.bid_qty ?? 0,
-      bidPrice: leg.bid_price ?? 0,
-      askQty: leg.ask_qty ?? 0,
-      askPrice: leg.ask_price ?? 0,
-      underlyingValue: leg.underlying_spot_price ?? underlyingValue,
+      lastPrice: ltp,
+      change,
+      pChange,
+      openInterest: oi,
+      changeinOpenInterest: oi - prevOi,
+      totalTradedVolume: md?.volume ?? 0,
+      impliedVolatility: greeks?.iv ?? 0,
+      bidQty: md?.bid_qty ?? 0,
+      bidPrice: md?.bid_price ?? 0,
+      askQty: md?.ask_qty ?? 0,
+      askPrice: md?.ask_price ?? 0,
+      underlyingValue,
     };
   }
 
@@ -893,7 +911,8 @@ export class UpstoxProvider extends BaseProvider {
     const raw = await this.upstoxFetch<UpstoxMarketStatusResponse>(
       '/market-status',
     );
-    const entries = raw.data ?? [];
+    const data = raw.data;
+    const entries = Array.isArray(data) ? data : data ? [data] : [];
     const nse = entries.find((e) => e.exchange === 'NSE') ?? entries[0];
     const rawStatus = (nse?.status ?? 'closed').toLowerCase();
     const status: MarketStatus['status'] =
