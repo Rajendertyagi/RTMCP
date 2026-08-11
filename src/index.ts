@@ -10,6 +10,31 @@ import { createServer } from './server.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  const sub = args[0];
+
+  // Server management commands — no Claude / MCP involved, just start/stop/restart
+  // the local dashboard. Lets the owner avoid Task Manager entirely.
+  if (sub === 'stop' || sub === 'kill') {
+    const { stopServer } = await import('./dashboard/process-manager.js');
+    stopServer();
+    return;
+  }
+  if (sub === 'status') {
+    const { printStatus } = await import('./dashboard/process-manager.js');
+    printStatus();
+    return;
+  }
+  if (sub === 'restart') {
+    const { restartServer } = await import('./dashboard/process-manager.js');
+    restartServer();
+    return;
+  }
+  if (sub === 'start') {
+    const { startDashboard } = await import('./dashboard/server.js');
+    await startDashboard();
+    return;
+  }
+
   const isDashboard = args.includes('--dashboard') || args.includes('--web');
   if (isDashboard) {
     const { startDashboard } = await import('./dashboard/server.js');

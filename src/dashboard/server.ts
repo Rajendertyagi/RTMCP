@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { createDataProvider } from '../data/provider-factory.js';
 import { handleApi } from './router.js';
 import { DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_URL } from '../data/constants/dashboard.js';
+import { findPidOnPort, freePortIfHeld } from './process-manager.js';
 import { INDEX_HTML, APP_JS, STYLES_CSS } from './assets.js';
 import { logRequest, logError, logInfo } from '../utils/event-log.js';
 import type { DataProvider } from '../data/providers/base.provider.js';
@@ -148,6 +149,10 @@ async function handleCallback(res: http.ServerResponse, code: string | null): Pr
 
 /** Start the local dashboard web server. Binds to localhost only. */
 export async function startDashboard(): Promise<void> {
+  // Take over the port from any stale instance so a fresh start can't fail with
+  // "port in use" (the old copy is stopped automatically).
+  await freePortIfHeld();
+
   const provider = createDataProvider();
 
   // Lazily initialize the provider (loads the Upstox token, warms NSE cookies)
@@ -223,6 +228,25 @@ export async function startDashboard(): Promise<void> {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: message }));
     }
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      const holder = findPidOnPort(DASHBOARD_PORT);
+      console.error(
+        '[Dashboard] Port ' +
+          DASHBOARD_PORT +
+          ' is still in use' +
+          (holder ? ' by PID ' + holder : '') +
+          '. Run: ' +
+          process.execPath +
+          ' restart   (or close that process).',
+      );
+      process.exit(1);
+      return;
+    }
+    console.error('[Dashboard] Server error:', err.message);
+    process.exit(1);
   });
 
   server.listen(DASHBOARD_PORT, DASHBOARD_HOST, () => {
