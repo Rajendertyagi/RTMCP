@@ -213,6 +213,11 @@ interface UpstoxTokenResponse {
 let activeAccessToken: string | null = null;
 let activeRefreshToken: string | null = null;
 
+/** Scope requested from Upstox so it issues a refresh token (the "spare key"
+ *  for silent daily renewal). Some Upstox accounts expose no console toggle
+ *  for offline access, so we request it via the authorization URL instead. */
+const UPSTOX_AUTH_SCOPE = 'offline-access';
+
 export class UpstoxProvider extends BaseProvider {
   readonly name = 'upstox';
 
@@ -259,6 +264,7 @@ export class UpstoxProvider extends BaseProvider {
       client_id: apiKey,
       redirect_uri: redirectUri,
       response_type: 'code',
+      scope: UPSTOX_AUTH_SCOPE,
     });
     if (codeChallenge) {
       params.set('code_challenge', codeChallenge);
@@ -321,8 +327,9 @@ export class UpstoxProvider extends BaseProvider {
     if (!json.refresh_token) {
       console.error(
         '[Upstox] WARNING: Upstox did not return a refresh_token. ' +
-          'Automatic daily renewal will NOT work — you would have to re-login each day ' +
-          'or switch to TOTP. Check that your Upstox app is approved for offline/refresh access.',
+          'The login URL now requests "scope=offline-access"; if your Upstox app type still ' +
+          'does not issue one, automatic daily renewal cannot work — switch to TOTP ' +
+          '(password + PIN auto-login) instead.',
       );
     }
     return json.access_token;
