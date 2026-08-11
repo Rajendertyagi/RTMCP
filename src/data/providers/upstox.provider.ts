@@ -327,11 +327,10 @@ export class UpstoxProvider extends BaseProvider {
 
     UpstoxProvider.saveToken(json.access_token, json.refresh_token);
     if (!json.refresh_token) {
-      console.error(
-        '[Upstox] WARNING: Upstox did not return a refresh_token. ' +
-          'The login URL now requests "scope=offline-access"; if your Upstox app type still ' +
-          'does not issue one, automatic daily renewal cannot work — switch to TOTP ' +
-          '(password + PIN auto-login) instead.',
+      console.warn(
+        '[Upstox] Note: this Upstox app type does not issue a refresh token ' +
+          '(the Developer Console has no Offline Access toggle), so the access token expires ~daily. ' +
+          'Re-login any time via Broker Setup → Connect — your API key/secret stay saved, no restart needed.',
       );
     }
     return json.access_token;
