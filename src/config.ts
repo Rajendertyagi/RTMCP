@@ -13,15 +13,26 @@
 import { z } from 'zod';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ENV_PATH } from './utils/paths.js';
 
 // ── .env loading (git-ignored local secrets) ──────────────────────────────
 // Populate process.env from a local `.env` file (if present) WITHOUT overriding
 // variables already set by the host (e.g. the Claude Desktop `env` block).
 // Skipped under test runners so unit tests are unaffected.
+//
+// The canonical `.env` lives in the shared config dir (see utils/paths.ts) so
+// the Claude tool and the Broker Setup dashboard always read the same file, no
+// matter which working directory either was launched from. A legacy `.env` in
+// the current working directory is still honoured as a fallback.
 function loadDotEnvFile(): void {
   if (process.env['VITEST'] || process.env['NODE_ENV'] === 'test') return;
-  const envPath = join(process.cwd(), '.env');
-  if (!existsSync(envPath)) return;
+
+  const candidates = [ENV_PATH];
+  const cwdEnv = join(process.cwd(), '.env');
+  if (cwdEnv !== ENV_PATH) candidates.push(cwdEnv);
+  const envPath = candidates.find((p) => existsSync(p));
+  if (!envPath) return;
+
   try {
     const text = readFileSync(envPath, 'utf8');
     for (const line of text.split('\n')) {

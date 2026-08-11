@@ -12,11 +12,10 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { UpstoxProvider } from '../data/providers/upstox.provider.js';
 import { DASHBOARD_PORT } from '../data/constants/dashboard.js';
+import { ENV_PATH, UPSTOX_TOKEN_PATH } from '../utils/paths.js';
 
-const ENV_PATH = join(process.cwd(), '.env');
 const REDIRECT_URI = `http://127.0.0.1:${DASHBOARD_PORT}/upstox/callback`;
 
 /** The PKCE verifier for the in-progress authorization (cleared after use). */
@@ -103,6 +102,6 @@ export function getUpstoxStatus(): {
     env['DATA_PROVIDER'] === 'upstox' &&
     !!env['UPSTOX_API_KEY'] &&
     !!env['UPSTOX_API_SECRET'];
-  const connected = existsSync(join(process.cwd(), '.upstox-token.json'));
+  const connected = existsSync(UPSTOX_TOKEN_PATH);
   return { configured, connected, redirectUri: REDIRECT_URI };
 }

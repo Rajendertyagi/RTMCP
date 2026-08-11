@@ -54,11 +54,23 @@ import { NSEProvider } from './nse.provider.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
+import { UPSTOX_TOKEN_PATH } from '../../utils/paths.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const UPSTOX_BASE = 'https://api.upstox.com/v2';
-const TOKEN_FILE = join(process.cwd(), '.upstox-token.json');
+const TOKEN_FILE = UPSTOX_TOKEN_PATH;
+
+/**
+ * Resolve which token file to READ: prefer the shared config-dir token, but
+ * fall back to a legacy token in the current working directory so pre-dashboard
+ * setups keep working. Writes always go to {@link TOKEN_FILE}.
+ */
+function resolveTokenReadPath(): string {
+  if (existsSync(TOKEN_FILE)) return TOKEN_FILE;
+  const cwd = join(process.cwd(), '.upstox-token.json');
+  return cwd !== TOKEN_FILE && existsSync(cwd) ? cwd : TOKEN_FILE;
+}
 
 /** Minimum gap between requests to respect Upstox free-tier rate limits. */
 const MIN_REQUEST_GAP_MS = 250;
@@ -285,9 +297,10 @@ export class UpstoxProvider extends BaseProvider {
     console.error('[Upstox] Initialising provider …');
 
     // Resolve the access token: env value wins, else the persisted token file.
-    if (!this.accessToken && existsSync(TOKEN_FILE)) {
+    const tokenPath = resolveTokenReadPath();
+    if (!this.accessToken && existsSync(tokenPath)) {
       try {
-        const raw = JSON.parse(readFileSync(TOKEN_FILE, 'utf8')) as {
+        const raw = JSON.parse(readFileSync(tokenPath, 'utf8')) as {
           access_token?: string;
         };
         if (raw.access_token) this.accessToken = raw.access_token;
