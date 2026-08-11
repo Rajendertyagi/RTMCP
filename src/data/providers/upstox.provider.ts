@@ -147,18 +147,31 @@ interface UpstoxOptionChainItem {
 
 interface UpstoxOptionChainResponse {
   status?: string;
-  data?: {
-    underlying_key?: string;
-    underlying_spot_price?: number;
-    expiry?: string;
-    count?: number;
-    data?: UpstoxOptionChainItem[];
-  };
+  // Upstox v2 returns the strike buckets either directly as `data` (an array)
+  // or wrapped as `data.data` (object with a nested array). Both handled.
+  data?:
+    | UpstoxOptionChainItem[]
+    | {
+        underlying_key?: string;
+        underlying_spot_price?: number;
+        expiry?: string;
+        count?: number;
+        data?: UpstoxOptionChainItem[];
+      };
 }
 
 interface UpstoxContractResponse {
   status?: string;
-  data?: { expiry?: string[]; strike_prices?: number[] };
+  // Upstox v2 returns `data` as an array of option-contract objects (each with
+  // its own `expiry`). Some responses wrap it as `{ expiry: [...] }`; both handled.
+  data?:
+    | Array<{
+        instrument_key?: string;
+        expiry?: string;
+        strike_price?: number;
+        option_type?: string;
+      }>
+    | { expiry?: string[]; strike_prices?: number[] };
 }
 
 interface UpstoxCandleResponse {
@@ -616,8 +629,17 @@ export class UpstoxProvider extends BaseProvider {
       '/option/contract',
       { params: { instrument_key: key } },
     );
-    const expiries = raw.data?.expiry ?? [];
-    return [...expiries].sort();
+    const payload = raw.data;
+    // Upstox v2 returns `data` as an array of option-contract objects; each
+    // contract carries its own `expiry`. Some responses wrap it as
+    // `{ expiry: [...] }`. Collect the distinct dates from whichever shape.
+    const fromArray = Array.isArray(payload)
+      ? payload.map((c) => c.expiry).filter((e): e is string => typeof e === 'string')
+      : [];
+    const fromObject = !Array.isArray(payload) && Array.isArray((payload as { expiry?: unknown }).expiry)
+      ? (payload as { expiry: string[] }).expiry
+      : [];
+    return Array.from(new Set([...fromArray, ...fromObject])).sort();
   }
 
   async getOptionChain(
@@ -645,8 +667,27 @@ export class UpstoxProvider extends BaseProvider {
       },
     );
 
-    const underlyingValue = raw.data?.underlying_spot_price ?? 0;
-    const items = raw.data?.data ?? [];
+    // Upstox v2 returns the strike buckets either directly as `data` (an array)
+    // or wrapped as `data.data`. Accept both so the chain renders either way.
+    const payload = raw.data;
+    const items: UpstoxOptionChainItem[] = Array.isArray(payload)
+      ? payload
+      : payload?.data ?? [];
+    const underlyingValue =
+      (!Array.isArray(payload) ? payload?.underlying_spot_price : undefined) ??
+      items[0]?.call_options?.underlying_spot_price ??
+      items[0]?.put_options?.underlying_spot_price ??
+      0;
+
+    if (items.length === 0) {
+      console.error(
+        '[Upstox][diag] /option/chain returned no strike rows for ' +
+          `${symbol} (${underlyingKey}). data is ${Array.isArray(raw.data) ? 'array' : 'object'}` +
+          (Array.isArray(raw.data) || !raw.data
+            ? ''
+            : `; keys: ${Object.keys(raw.data as object).join(',')}`),
+      );
+    }
 
     const rows: OptionChainRow[] = [];
     let totalCEOI = 0;
