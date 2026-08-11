@@ -28,26 +28,7 @@ import {
 // Without this, every /api data call runs on an uninitialized provider →
 // Upstox returns 401 (no token) and the NSE fallback has no cookies → all
 // dashboard views come back empty even though the UI itself loads fine.
-let dashboardProviderReady = false;
-let dashboardProviderInit: Promise<void> | null = null;
-
-async function ensureDashboardProvider(provider: DataProvider): Promise<void> {
-  if (dashboardProviderReady) return;
-  if (!dashboardProviderInit) {
-    dashboardProviderInit = provider
-      .initialize()
-      .then(() => {
-        dashboardProviderReady = true;
-        console.error('[Dashboard] Data provider initialized.');
-      })
-      .catch((err) => {
-        dashboardProviderInit = null; // allow a retry on the next request
-        console.error('[Dashboard] Provider init failed:', String(err));
-        throw err;
-      });
-  }
-  await dashboardProviderInit;
-}
+// (Implementation lives inside startDashboard as ensureDashboardProviderInit.)
 
 interface StaticAsset {
   body: string;
